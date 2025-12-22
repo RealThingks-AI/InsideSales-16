@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
@@ -158,9 +158,26 @@ export const MeetingModal = ({ open, onOpenChange, meeting, onSuccess }: Meeting
   
   // State for date/time selection
   const [timezone, setTimezone] = useState(getBrowserTimezone);
+  const [tzPopoverOpen, setTzPopoverOpen] = useState(false);
+  const tzListRef = useRef<HTMLDivElement | null>(null);
   const [startDate, setStartDate] = useState<Date | undefined>(undefined);
   const [startTime, setStartTime] = useState("09:00");
   const [duration, setDuration] = useState("60");
+
+  useEffect(() => {
+    if (!tzPopoverOpen) return;
+
+    // After popover mounts, scroll the selected timezone into view.
+    const raf = requestAnimationFrame(() => {
+      const selectedEl = tzListRef.current?.querySelector(
+        `[data-tz="${timezone}"]`
+      ) as HTMLElement | null;
+
+      selectedEl?.scrollIntoView({ block: "center" });
+    });
+
+    return () => cancelAnimationFrame(raf);
+  }, [tzPopoverOpen, timezone]);
   
   // Toggle for Lead vs Contact selection
   const [linkType, setLinkType] = useState<'lead' | 'contact'>('lead');
@@ -659,7 +676,7 @@ export const MeetingModal = ({ open, onOpenChange, meeting, onSuccess }: Meeting
           {/* Timezone - Compact inline */}
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <TooltipProvider>
-              <Popover>
+              <Popover open={tzPopoverOpen} onOpenChange={setTzPopoverOpen}>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <PopoverTrigger asChild>
@@ -675,6 +692,7 @@ export const MeetingModal = ({ open, onOpenChange, meeting, onSuccess }: Meeting
                 </Tooltip>
                 <PopoverContent className="w-72 p-0" align="start">
                   <div
+                    ref={tzListRef}
                     className="max-h-60 overflow-y-auto overscroll-contain pointer-events-auto p-1"
                     onWheelCapture={(e) => e.stopPropagation()}
                     onTouchMove={(e) => e.stopPropagation()}
@@ -682,6 +700,7 @@ export const MeetingModal = ({ open, onOpenChange, meeting, onSuccess }: Meeting
                     {TIMEZONES.map((tz) => (
                       <Button
                         key={tz.value}
+                        data-tz={tz.value}
                         variant={timezone === tz.value ? "secondary" : "ghost"}
                         className="w-full justify-start text-xs h-7 font-normal"
                         onClick={() => handleTimezoneChange(tz.value)}
