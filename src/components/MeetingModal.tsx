@@ -4,7 +4,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { toZonedTime, fromZonedTime } from "date-fns-tz";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -576,9 +576,10 @@ export const MeetingModal = ({ open, onOpenChange, meeting, onSuccess }: Meeting
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md p-5">
+      <DialogContent className="max-w-lg p-5">
         <DialogHeader className="pb-3">
           <DialogTitle className="text-base font-semibold">{meeting ? "Edit Meeting" : "New Meeting"}</DialogTitle>
+          <DialogDescription className="sr-only">Schedule a meeting with participants</DialogDescription>
         </DialogHeader>
         
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -593,6 +594,53 @@ export const MeetingModal = ({ open, onOpenChange, meeting, onSuccess }: Meeting
               className="h-8 text-sm"
               required
             />
+          </div>
+
+          {/* Timezone & Organizer - Before Date */}
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <TooltipProvider>
+              <Popover open={tzPopoverOpen} onOpenChange={setTzPopoverOpen}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <PopoverTrigger asChild>
+                      <Button variant="ghost" size="sm" className="h-6 px-2 text-xs gap-1.5 text-muted-foreground hover:text-foreground">
+                        <Globe className="h-3 w-3" />
+                        {selectedTimezone?.short || timezone}
+                      </Button>
+                    </PopoverTrigger>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>{selectedTimezone?.label || timezone}</p>
+                  </TooltipContent>
+                </Tooltip>
+                <PopoverContent className="w-72 p-0" align="start">
+                  <div
+                    ref={tzListRef}
+                    className="max-h-60 overflow-y-auto overscroll-contain pointer-events-auto p-1"
+                    onWheelCapture={(e) => e.stopPropagation()}
+                    onTouchMove={(e) => e.stopPropagation()}
+                  >
+                    {TIMEZONES.map((tz) => (
+                      <Button
+                        key={tz.value}
+                        data-tz={tz.value}
+                        variant={timezone === tz.value ? "secondary" : "ghost"}
+                        className="w-full justify-start text-xs h-7 font-normal"
+                        onClick={() => handleTimezoneChange(tz.value)}
+                      >
+                        {tz.label}
+                      </Button>
+                    ))}
+                  </div>
+                </PopoverContent>
+              </Popover>
+            </TooltipProvider>
+            <span className="text-muted-foreground/60">•</span>
+            <span className="flex items-center gap-1">
+              <User className="h-3 w-3" />
+              {user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'You'}
+              {user?.email && <span className="text-muted-foreground/60">({user.email})</span>}
+            </span>
           </div>
 
           {/* Date, Time & Duration Row */}
@@ -671,52 +719,6 @@ export const MeetingModal = ({ open, onOpenChange, meeting, onSuccess }: Meeting
                 </SelectContent>
               </Select>
             </div>
-          </div>
-
-          {/* Timezone - Compact inline */}
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <TooltipProvider>
-              <Popover open={tzPopoverOpen} onOpenChange={setTzPopoverOpen}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <PopoverTrigger asChild>
-                      <Button variant="ghost" size="sm" className="h-6 px-2 text-xs gap-1.5 text-muted-foreground hover:text-foreground">
-                        <Globe className="h-3 w-3" />
-                        {selectedTimezone?.short || timezone}
-                      </Button>
-                    </PopoverTrigger>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>{selectedTimezone?.label || timezone}</p>
-                  </TooltipContent>
-                </Tooltip>
-                <PopoverContent className="w-72 p-0" align="start">
-                  <div
-                    ref={tzListRef}
-                    className="max-h-60 overflow-y-auto overscroll-contain pointer-events-auto p-1"
-                    onWheelCapture={(e) => e.stopPropagation()}
-                    onTouchMove={(e) => e.stopPropagation()}
-                  >
-                    {TIMEZONES.map((tz) => (
-                      <Button
-                        key={tz.value}
-                        data-tz={tz.value}
-                        variant={timezone === tz.value ? "secondary" : "ghost"}
-                        className="w-full justify-start text-xs h-7 font-normal"
-                        onClick={() => handleTimezoneChange(tz.value)}
-                      >
-                        {tz.label}
-                      </Button>
-                    ))}
-                  </div>
-                </PopoverContent>
-              </Popover>
-            </TooltipProvider>
-            <span className="text-muted-foreground/60">•</span>
-            <span className="flex items-center gap-1">
-              <User className="h-3 w-3" />
-              {user?.email || 'You'}
-            </span>
           </div>
 
           {/* Conflict Warning */}
