@@ -244,13 +244,51 @@ const UserDashboard = () => {
         .limit(5);
       if (error) throw error;
 
-      return (data || []).map(log => ({
-        id: log.id,
-        subject: `${log.action} ${log.resource_type}`,
-        activity_type: log.action,
-        activity_date: log.created_at,
-        resource_type: log.resource_type,
-      }));
+      return (data || []).map(log => {
+        // Build detailed subject based on action type
+        let detailedSubject = `${log.action} ${log.resource_type}`;
+        const details = log.details as any;
+        
+        if (log.action === 'UPDATE' && details?.field_changes) {
+          const changedFields = Object.keys(details.field_changes);
+          if (changedFields.length > 0) {
+            const fieldSummary = changedFields.slice(0, 2).map(field => {
+              const change = details.field_changes[field];
+              const oldVal = change?.old ?? 'empty';
+              const newVal = change?.new ?? 'empty';
+              return `${field}: "${oldVal}" → "${newVal}"`;
+            }).join(', ');
+            detailedSubject = `Updated ${log.resource_type} - ${fieldSummary}${changedFields.length > 2 ? ` (+${changedFields.length - 2} more)` : ''}`;
+          }
+        } else if (log.action === 'UPDATE' && details?.updated_fields) {
+          const updatedFields = Object.keys(details.updated_fields);
+          if (updatedFields.length > 0) {
+            detailedSubject = `Updated ${log.resource_type} - Changed: ${updatedFields.slice(0, 3).join(', ')}${updatedFields.length > 3 ? ` (+${updatedFields.length - 3} more)` : ''}`;
+          }
+        } else if (log.action === 'CREATE' && details?.record_data) {
+          const recordName = details.record_data.lead_name || details.record_data.contact_name || 
+                            details.record_data.deal_name || details.record_data.company_name || 
+                            details.record_data.title || details.record_data.subject || '';
+          if (recordName) {
+            detailedSubject = `Created ${log.resource_type} - "${recordName}"`;
+          }
+        } else if (log.action === 'DELETE' && details?.deleted_data) {
+          const recordName = details.deleted_data.lead_name || details.deleted_data.contact_name || 
+                            details.deleted_data.deal_name || details.deleted_data.company_name || 
+                            details.deleted_data.title || details.deleted_data.subject || '';
+          if (recordName) {
+            detailedSubject = `Deleted ${log.resource_type} - "${recordName}"`;
+          }
+        }
+        
+        return {
+          id: log.id,
+          subject: detailedSubject,
+          activity_type: log.action,
+          activity_date: log.created_at,
+          resource_type: log.resource_type,
+        };
+      });
     },
     enabled: !!user?.id
   });
