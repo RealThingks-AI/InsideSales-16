@@ -48,12 +48,23 @@ export const ResizableDashboard = ({
       const saved = widgetLayouts[key];
       const d = defaults.get(key) ?? { x: 0, y: 0, w: 3, h: 2 };
 
+      const w = Math.max(2, Math.min(COLS, saved?.w ?? d.w ?? 3));
+      const h = Math.max(2, saved?.h ?? d.h ?? 2);
+
+      // Default packing: 4 widgets per row when w≈3 and COLS=12
+      const fallbackX = (index % 4) * 3;
+      const fallbackY = Math.floor(index / 4) * 2;
+
+      // Normalize x to never overflow the grid (prevents overlap/stacking)
+      const rawX = saved?.x ?? fallbackX;
+      const x = Math.max(0, Math.min(COLS - w, rawX));
+
       return {
         i: key,
-        x: saved?.x ?? (index % 6) * 2,
-        y: saved?.y ?? Math.floor(index / 6) * 2,
-        w: Math.max(2, Math.min(COLS, saved?.w ?? d.w ?? 3)),
-        h: Math.max(2, saved?.h ?? d.h ?? 2),
+        x,
+        y: saved?.y ?? fallbackY,
+        w,
+        h,
         minW: 2,
         minH: 2,
       };
