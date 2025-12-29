@@ -176,8 +176,16 @@ export const ResizableDashboard = ({
 
         .dash-content {
           height: 100%;
+          width: 100%;
           overflow: auto;
           border-radius: 0.75rem;
+        }
+
+        /* Ensure each widget fills its own grid cell (prevents "everything looks merged") */
+        .dash-content > * {
+          width: 100%;
+          max-width: 100%;
+          height: 100%;
         }
 
         .dash-content--locked {
@@ -186,15 +194,8 @@ export const ResizableDashboard = ({
         }
 
         .dash-item--edit {
-          animation: dash-wiggle 0.28s ease-in-out infinite;
-          transform-origin: center;
-          box-shadow: 0 0 0 2px hsl(var(--primary) / 0.4), 0 4px 12px hsl(var(--foreground) / 0.1);
-          border: 2px solid hsl(var(--primary) / 0.5);
-        }
-
-        @keyframes dash-wiggle {
-          0%, 100% { transform: rotate(-0.25deg); }
-          50% { transform: rotate(0.25deg); }
+          box-shadow: 0 0 0 2px hsl(var(--primary) / 0.35), 0 6px 18px hsl(var(--foreground) / 0.10);
+          border: 2px solid hsl(var(--primary) / 0.45);
         }
 
         .dash-remove {
