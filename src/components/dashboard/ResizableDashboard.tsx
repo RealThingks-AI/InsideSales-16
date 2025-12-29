@@ -157,12 +157,16 @@ export const ResizableDashboard = ({
           height: 100%;
           position: relative;
           overflow: hidden;
-          border-radius: 0.5rem;
+          border-radius: 0.75rem;
+          background: hsl(var(--card));
+          border: 1px solid hsl(var(--border));
+          box-shadow: 0 1px 3px hsl(var(--foreground) / 0.05);
         }
 
         .dash-content {
           height: 100%;
           overflow: auto;
+          border-radius: 0.75rem;
         }
 
         .dash-content--locked {
@@ -173,7 +177,8 @@ export const ResizableDashboard = ({
         .dash-item--edit {
           animation: dash-wiggle 0.28s ease-in-out infinite;
           transform-origin: center;
-          box-shadow: 0 0 0 2px hsl(var(--primary) / 0.3);
+          box-shadow: 0 0 0 2px hsl(var(--primary) / 0.4), 0 4px 12px hsl(var(--foreground) / 0.1);
+          border: 2px solid hsl(var(--primary) / 0.5);
         }
 
         @keyframes dash-wiggle {
