@@ -125,7 +125,11 @@ const LeadTable = ({
   
   // Get owner parameter from URL - "me" means filter by current user
   const ownerParam = searchParams.get('owner');
+  const fromDateParam = searchParams.get('from');
+  const toDateParam = searchParams.get('to');
   const [ownerFilter, setOwnerFilter] = useState<string>("all");
+  const [dateFromFilter, setDateFromFilter] = useState<string | null>(fromDateParam);
+  const [dateToFilter, setDateToFilter] = useState<string | null>(toDateParam);
 
   // Fetch current user ID for "me" filtering
   useEffect(() => {
@@ -197,6 +201,22 @@ const LeadTable = ({
     if (ownerFilter !== "all") {
       filtered = filtered.filter(lead => lead.created_by === ownerFilter);
     }
+    
+    // Apply date range filtering
+    if (dateFromFilter) {
+      const fromDate = new Date(dateFromFilter);
+      filtered = filtered.filter(lead => {
+        if (!lead.created_time) return false;
+        return new Date(lead.created_time) >= fromDate;
+      });
+    }
+    if (dateToFilter) {
+      const toDate = new Date(dateToFilter);
+      filtered = filtered.filter(lead => {
+        if (!lead.created_time) return false;
+        return new Date(lead.created_time) <= toDate;
+      });
+    }
 
     // Apply sorting
     if (sortField) {
@@ -209,7 +229,7 @@ const LeadTable = ({
     }
     setFilteredLeads(filtered);
     setCurrentPage(1);
-  }, [leads, searchTerm, statusFilter, ownerFilter, sortField, sortDirection]);
+  }, [leads, searchTerm, statusFilter, ownerFilter, dateFromFilter, dateToFilter, sortField, sortDirection]);
 
   const handleSort = (field: string) => {
     if (sortField === field) {
