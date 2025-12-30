@@ -6,8 +6,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { 
   Users, FileText, Briefcase, Plus, Settings2, Calendar, Activity, Bell, 
-  Mail, Building2, ListTodo, CalendarClock, ClipboardList, Check, X, TrendingUp, TrendingDown, Minus
+  Mail, Building2, ListTodo, CalendarClock, ClipboardList, Check, X, TrendingUp, TrendingDown, Minus, User
 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { useUserRole } from "@/hooks/useUserRole";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { WidgetKey, WidgetLayoutConfig, DEFAULT_WIDGETS } from "./DashboardCustomizeModal";
 import { ResizableDashboard } from "./ResizableDashboard";
@@ -80,6 +82,7 @@ const compactLayoutsUtil = (layouts: WidgetLayoutConfig, visibleKeys: WidgetKey[
 
 const UserDashboard = () => {
   const { user } = useAuth();
+  const { isAdmin } = useUserRole();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [isResizeMode, setIsResizeMode] = useState(false);
@@ -622,6 +625,9 @@ const UserDashboard = () => {
 
   // Weekly summary view mode state
   const [weeklySummaryView, setWeeklySummaryView] = useState<'thisWeek' | 'allTime'>('thisWeek');
+  
+  // Recent activities toggle state (for admin only)
+  const [showAllActivities, setShowAllActivities] = useState(false);
 
   // Weekly summary with comparison data
   const { data: weeklySummary } = useQuery({
@@ -728,16 +734,22 @@ const UserDashboard = () => {
   };
 
   const { data: recentActivities } = useQuery({
-    queryKey: ['user-recent-activities', user?.id, userProfiles],
+    queryKey: ['user-recent-activities', user?.id, userProfiles, showAllActivities],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from('security_audit_log')
         .select('id, action, resource_type, resource_id, created_at, details, user_id')
-        .eq('user_id', user?.id)
         .in('action', ['CREATE', 'UPDATE', 'DELETE'])
         .in('resource_type', ['contacts', 'leads', 'deals', 'accounts', 'meetings', 'tasks'])
         .order('created_at', { ascending: false })
-        .limit(5);
+        .limit(10);
+      
+      // Only filter by user_id if not showing all activities
+      if (!showAllActivities) {
+        query = query.eq('user_id', user?.id);
+      }
+      
+      const { data, error } = await query;
       if (error) throw error;
 
       return (data || []).map(log => {
@@ -773,6 +785,7 @@ const UserDashboard = () => {
           activity_type: log.action,
           activity_date: log.created_at,
           resource_type: log.resource_type,
+          user_id: log.user_id,
         };
       });
     },
@@ -1246,7 +1259,7 @@ const UserDashboard = () => {
 
       case "recentActivities":
         const getActivityIcon = (action: string, resourceType: string) => {
-          const iconClass = "w-2.5 h-2.5";
+          const iconClass = "w-3 h-3";
           if (action === 'CREATE') return <Plus className={`${iconClass} text-green-600`} />;
           if (action === 'DELETE') return <X className={`${iconClass} text-red-600`} />;
           // UPDATE
@@ -1264,6 +1277,37 @@ const UserDashboard = () => {
           if (action === 'CREATE') return { text: 'Created', class: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' };
           if (action === 'DELETE') return { text: 'Deleted', class: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' };
           return { text: 'Updated', class: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' };
+        };
+        const getIconBgColor = (action: string, resourceType: string) => {
+          if (action === 'CREATE') return 'bg-green-100 dark:bg-green-900/30';
+          if (action === 'DELETE') return 'bg-red-100 dark:bg-red-900/30';
+          switch (resourceType) {
+            case 'leads': return 'bg-blue-100 dark:bg-blue-900/30';
+            case 'contacts': return 'bg-emerald-100 dark:bg-emerald-900/30';
+            case 'deals': return 'bg-purple-100 dark:bg-purple-900/30';
+            case 'accounts': return 'bg-indigo-100 dark:bg-indigo-900/30';
+            case 'meetings': return 'bg-teal-100 dark:bg-teal-900/30';
+            case 'tasks': return 'bg-orange-100 dark:bg-orange-900/30';
+            default: return 'bg-muted';
+          }
+        };
+        const formatRelativeTime = (dateStr: string) => {
+          const date = new Date(dateStr);
+          const now = new Date();
+          const diffMs = now.getTime() - date.getTime();
+          const diffMins = Math.floor(diffMs / 60000);
+          const diffHrs = Math.floor(diffMs / 3600000);
+          const diffDays = Math.floor(diffMs / 86400000);
+          
+          if (diffMins < 1) return 'Just now';
+          if (diffMins < 60) return `${diffMins}m ago`;
+          if (diffHrs < 24) return `${diffHrs}h ago`;
+          if (diffDays < 7) return `${diffDays}d ago`;
+          return format(date, 'MMM d');
+        };
+        const getActivityUserName = (activityUserId: string) => {
+          const profile = userProfiles?.find(p => p.id === activityUserId);
+          return profile?.full_name || 'Unknown User';
         };
         const navigateToEntity = (resourceType: string) => {
           if (isResizeMode) return;
@@ -1283,33 +1327,80 @@ const UserDashboard = () => {
                 <Activity className="w-4 h-4 text-primary flex-shrink-0" />
                 Recent Activities
               </CardTitle>
-              <Button variant="ghost" size="sm" className="h-6 text-xs flex-shrink-0" onClick={() => !isResizeMode && navigate('/settings?tab=audit')}>View All</Button>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {isAdmin && (
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[9px] text-muted-foreground whitespace-nowrap">
+                      {showAllActivities ? 'All' : 'My'}
+                    </span>
+                    <Switch
+                      checked={showAllActivities}
+                      onCheckedChange={setShowAllActivities}
+                      className="scale-75 data-[state=checked]:bg-primary"
+                    />
+                  </div>
+                )}
+                <Button variant="ghost" size="sm" className="h-6 text-xs flex-shrink-0" onClick={() => !isResizeMode && navigate('/settings?tab=audit')}>
+                  View All
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="px-3 pb-3 pt-0 flex-1 min-h-0 flex flex-col">
               {recentActivities && recentActivities.length > 0 ? (
                 <ScrollArea className="flex-1 min-h-0">
-                  <div className="space-y-1.5 pr-2">
-                    {recentActivities.slice(0, 5).map((activity) => {
+                  <div className="space-y-2 pr-2">
+                    {recentActivities.slice(0, 8).map((activity) => {
                       const badge = getActivityBadge(activity.activity_type);
+                      const isOwnActivity = activity.user_id === user?.id;
                       return (
                         <div 
                           key={activity.id} 
-                          className="flex items-start gap-1.5 p-1.5 rounded bg-muted/50 hover:bg-muted cursor-pointer transition-colors"
+                          className="flex gap-3 p-2.5 rounded-lg bg-muted/40 hover:bg-muted hover:shadow-sm cursor-pointer transition-all"
                           onClick={() => navigateToEntity(activity.resource_type)}
                         >
-                          <div className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 ${
-                            activity.activity_type === 'CREATE' ? 'bg-green-100 dark:bg-green-900/30' :
-                            activity.activity_type === 'DELETE' ? 'bg-red-100 dark:bg-red-900/30' : 'bg-blue-100 dark:bg-blue-900/30'
-                          }`}>
+                          {/* Left: Icon */}
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${getIconBgColor(activity.activity_type, activity.resource_type)}`}>
                             {getActivityIcon(activity.activity_type, activity.resource_type)}
                           </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-1 mb-0.5">
-                              <span className={`text-[8px] px-1 py-0.5 rounded ${badge.class}`}>{badge.text}</span>
-                              <span className="text-[8px] text-muted-foreground capitalize">{activity.resource_type}</span>
+                          
+                          {/* Right: Content */}
+                          <div className="flex-1 min-w-0">
+                            {/* Top row: Badge + Resource + Timestamp */}
+                            <div className="flex items-center justify-between gap-2 mb-0.5">
+                              <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                                <span className={`text-[9px] px-1.5 py-0.5 rounded font-medium flex-shrink-0 ${badge.class}`}>
+                                  {badge.text}
+                                </span>
+                                <span className="text-[10px] text-muted-foreground capitalize font-medium truncate">
+                                  {activity.resource_type}
+                                </span>
+                              </div>
+                              <TooltipProvider delayDuration={100}>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="text-[9px] text-muted-foreground whitespace-nowrap flex-shrink-0">
+                                      {formatRelativeTime(activity.activity_date)}
+                                    </span>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="left" className="text-xs">
+                                    {format(new Date(activity.activity_date), 'MMM d, yyyy HH:mm')}
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
                             </div>
-                            <p className="text-[10px] font-medium line-clamp-2">{activity.subject}</p>
-                            <p className="text-[9px] text-muted-foreground">{format(new Date(activity.activity_date), 'MMM d, HH:mm')}</p>
+                            
+                            {/* User name (All Activities mode only, for non-self activities) */}
+                            {showAllActivities && !isOwnActivity && (
+                              <p className="text-[9px] text-muted-foreground mb-0.5 flex items-center gap-1">
+                                <User className="w-2.5 h-2.5" />
+                                {getActivityUserName(activity.user_id)}
+                              </p>
+                            )}
+                            
+                            {/* Description */}
+                            <p className="text-[11px] font-medium line-clamp-2 leading-snug">
+                              {activity.subject}
+                            </p>
                           </div>
                         </div>
                       );
@@ -1319,8 +1410,8 @@ const UserDashboard = () => {
               ) : (
                 <div className="flex-1 min-h-0 flex items-center justify-center">
                   <EmptyState
-                    title="No recent activities"
-                    description="Activities will appear as you work"
+                    title={showAllActivities ? "No team activities" : "No recent activities"}
+                    description={showAllActivities ? "Team activities will appear here" : "Activities will appear as you work"}
                     illustration="activities"
                     variant="compact"
                   />
