@@ -400,7 +400,7 @@ const Meetings = () => {
         <div className="px-6 h-16 flex items-center border-b w-full">
           <div className="flex items-center justify-between w-full">
             <div className="min-w-0 flex-1 flex items-center gap-3">
-              <h1 className="text-2xl text-foreground font-semibold">Meetings</h1>
+              <h1 className="text-xl sm:text-2xl text-foreground font-semibold">Meetings</h1>
               {ownerParam === 'me' && (
                 <Badge variant="secondary" className="gap-1">
                   <User className="h-3 w-3" />

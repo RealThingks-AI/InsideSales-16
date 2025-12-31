@@ -8,6 +8,7 @@ import { useAuth } from "@/hooks/useAuth";
 import SecurityEnhancedApp from "@/components/SecurityEnhancedApp";
 import { AppSidebar } from "@/components/AppSidebar";
 import PageAccessGuard from "@/components/PageAccessGuard";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import Dashboard from "./pages/Dashboard";
 import Accounts from "./pages/Accounts";
 import Contacts from "./pages/Contacts";
@@ -164,15 +165,17 @@ const AppRouter = () => (
 );
 
 const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <SecurityEnhancedApp>
-      <TooltipProvider>
-        <Toaster />
-        <Sonner />
-        <AppRouter />
-      </TooltipProvider>
-    </SecurityEnhancedApp>
-  </QueryClientProvider>
+  <ErrorBoundary>
+    <QueryClientProvider client={queryClient}>
+      <SecurityEnhancedApp>
+        <TooltipProvider>
+          <Toaster />
+          <Sonner />
+          <AppRouter />
+        </TooltipProvider>
+      </SecurityEnhancedApp>
+    </QueryClientProvider>
+  </ErrorBoundary>
 );
 
 export default App;
