@@ -201,10 +201,10 @@ interface DealStakeholder {
 }
 
 const STAKEHOLDER_ROLES = [
-  { role: "budget_owner", label: "Budget Owner" },
-  { role: "champion", label: "Champion" },
-  { role: "influencer", label: "Influencer" },
-  { role: "objector", label: "Objector" },
+  { role: "budget_owner", label: "Budget Owner", color: "bg-blue-400", borderColor: "border-l-blue-400", badgeBg: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300" },
+  { role: "champion", label: "Champion", color: "bg-green-400", borderColor: "border-l-green-400", badgeBg: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300" },
+  { role: "influencer", label: "Influencer", color: "bg-amber-400", borderColor: "border-l-amber-400", badgeBg: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300" },
+  { role: "objector", label: "Objector", color: "bg-red-400", borderColor: "border-l-red-400", badgeBg: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300" },
 ] as const;
 
 // ── Inline add-dropdown for a single role ───────────────────────────────────
@@ -311,6 +311,9 @@ const StakeholdersSection = ({ deal, queryClient }: { deal: Deal; queryClient: R
   const cellRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [editingNote, setEditingNote] = useState<string | null>(null);
   const [noteText, setNoteText] = useState("");
+  const [showNotesSummary, setShowNotesSummary] = useState(false);
+  const [noteSearch, setNoteSearch] = useState("");
+  const [replacingRole, setReplacingRole] = useState<string | null>(null);
 
   // Confirmation dialog state for remove/replace
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -410,12 +413,42 @@ const StakeholdersSection = ({ deal, queryClient }: { deal: Deal; queryClient: R
     setConfirmDialog({ open: false, stakeholder: null, action: "remove" });
   };
 
+  // Notes summary data
+  const stakeholdersWithNotes = useMemo(() => {
+    return stakeholders.filter(s => s.note).map(s => {
+      const roleDef = STAKEHOLDER_ROLES.find(r => r.role === s.role);
+      return { ...s, roleLabel: roleDef?.label || s.role, badgeBg: roleDef?.badgeBg || "", contactName: contactNames[s.contact_id] || "…" };
+    }).filter(s => {
+      if (!noteSearch) return true;
+      const q = noteSearch.toLowerCase();
+      return s.contactName.toLowerCase().includes(q) || (s.note || "").toLowerCase().includes(q) || s.roleLabel.toLowerCase().includes(q);
+    });
+  }, [stakeholders, contactNames, noteSearch]);
+
   return (
     <>
     <div className="px-3 pt-2.5 pb-2">
-      <div className="border-t border-border pt-3">
-        <div className="grid grid-cols-2 gap-x-6 gap-y-2.5">
-          {STAKEHOLDER_ROLES.map(({ role, label }) => {
+      <div className="bg-muted/20 border border-border/60 rounded-lg overflow-hidden">
+        {/* Section Header */}
+        <div className="flex items-center justify-between px-3 py-2 bg-muted/50 border-b border-border/40">
+          <div className="flex items-center gap-2">
+            <Users className="h-3.5 w-3.5 text-muted-foreground" />
+            <span className="text-xs font-semibold text-foreground">Stakeholders</span>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className={cn("h-6 px-2 text-[10px] gap-1", showNotesSummary && "bg-accent")}
+            onClick={() => { setShowNotesSummary(!showNotesSummary); setNoteSearch(""); }}
+          >
+            <FileText className="h-3 w-3" />
+            Notes {stakeholders.filter(s => s.note).length > 0 && `(${stakeholders.filter(s => s.note).length})`}
+          </Button>
+        </div>
+
+        {/* Roles Grid */}
+        <div className="grid grid-cols-2 gap-0">
+          {STAKEHOLDER_ROLES.map(({ role, label, borderColor }, idx) => {
             const roleStakeholders = stakeholders.filter(s => s.role === role);
             const excludeIds = stakeholders.map(s => s.contact_id);
             const hasContact = roleStakeholders.length > 0;
@@ -429,7 +462,12 @@ const StakeholdersSection = ({ deal, queryClient }: { deal: Deal; queryClient: R
               <div
                 key={role}
                 ref={getCellRef}
-                className="flex items-start min-w-0 pb-2 border-b border-border/40 last:border-b-0"
+                className={cn(
+                  "flex items-start min-w-0 p-2.5 border-l-2 transition-colors hover:bg-muted/30",
+                  borderColor,
+                  idx < 2 && "border-b border-border/30",
+                  idx % 2 === 0 && "border-r border-border/30"
+                )}
               >
                 {/* Label */}
                 <span
@@ -446,12 +484,11 @@ const StakeholdersSection = ({ deal, queryClient }: { deal: Deal; queryClient: R
                       key={sh.id}
                       className="group/row flex items-center gap-1.5 min-w-0 h-5"
                     >
-                      {/* Contact name - plain text, no dropdown on click */}
                       <span className="truncate text-xs font-medium leading-5 flex-1 min-w-0">
                         {contactNames[sh.contact_id] || "…"}
                       </span>
 
-                      {/* Info button - inline next to contact name */}
+                      {/* Info/Note button */}
                       <Popover
                         open={editingNote === sh.id}
                         onOpenChange={(open) => {
@@ -490,7 +527,68 @@ const StakeholdersSection = ({ deal, queryClient }: { deal: Deal; queryClient: R
                         </PopoverContent>
                       </Popover>
 
-                      {/* Remove button - always prompts */}
+                      {/* Replace/Swap button */}
+                      <Popover
+                        open={replacingRole === sh.id}
+                        onOpenChange={(open) => {
+                          if (open) setReplacingRole(sh.id);
+                          else setReplacingRole(null);
+                        }}
+                      >
+                        <PopoverTrigger asChild>
+                          <button
+                            className="opacity-0 group-hover/row:opacity-60 hover:!opacity-100 transition-opacity shrink-0 w-5 h-5 flex items-center justify-center rounded hover:bg-accent/80 text-muted-foreground"
+                            title="Replace contact"
+                          >
+                            <ArrowRight className="h-3 w-3" />
+                          </button>
+                        </PopoverTrigger>
+                        <PopoverContent
+                          className="p-0 z-[200] w-[220px]"
+                          align="start"
+                          side="bottom"
+                          sideOffset={4}
+                          avoidCollisions={true}
+                          onWheel={e => e.stopPropagation()}
+                        >
+                          <Command shouldFilter={false}>
+                            <CommandInput placeholder="Search contacts…" className="h-8 text-xs" />
+                            <CommandList
+                              className="max-h-[180px] overflow-y-auto"
+                              onWheel={e => { e.stopPropagation(); (e.currentTarget as HTMLElement).scrollTop += e.deltaY; }}
+                            >
+                              {allContacts.filter(c => !excludeIds.includes(c.id) || c.id === sh.contact_id).length === 0 ? (
+                                <div className="py-4 text-center text-xs text-muted-foreground">No contacts found.</div>
+                              ) : (
+                                <CommandGroup>
+                                  {allContacts.filter(c => !excludeIds.includes(c.id) && c.id !== sh.contact_id).slice(0, 80).map(c => (
+                                    <CommandItem
+                                      key={c.id}
+                                      value={c.contact_name}
+                                      onSelect={() => {
+                                        setReplacingRole(null);
+                                        promptReplace(sh, c, role);
+                                      }}
+                                      className="cursor-pointer py-1 px-2"
+                                    >
+                                      <div className="flex flex-col min-w-0">
+                                        <span className="text-xs font-medium truncate">{c.contact_name}</span>
+                                        {(c.company_name || c.position) && (
+                                          <span className="text-[10px] text-muted-foreground truncate">
+                                            {[c.company_name, c.position].filter(Boolean).join(" • ")}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </CommandItem>
+                                  ))}
+                                </CommandGroup>
+                              )}
+                            </CommandList>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
+
+                      {/* Remove button */}
                       <button
                         className="opacity-0 group-hover/row:opacity-60 hover:!opacity-100 transition-opacity shrink-0 w-5 h-5 flex items-center justify-center rounded hover:bg-destructive/10 hover:text-destructive"
                         onClick={() => promptRemove(sh)}
@@ -501,7 +599,7 @@ const StakeholdersSection = ({ deal, queryClient }: { deal: Deal; queryClient: R
                     </div>
                   ))}
 
-                  {/* Show add dropdown only when no contact exists for this role */}
+                  {/* Add dropdown when no contact */}
                   {!hasContact && (
                     <div className="h-5 flex items-center">
                       <StakeholderAddDropdown
@@ -517,6 +615,37 @@ const StakeholdersSection = ({ deal, queryClient }: { deal: Deal; queryClient: R
             );
           })}
         </div>
+
+        {/* Notes Summary Panel */}
+        {showNotesSummary && (
+          <div className="border-t border-border/40 p-3 space-y-2">
+            <Input
+              placeholder="Search notes…"
+              value={noteSearch}
+              onChange={(e) => setNoteSearch(e.target.value)}
+              className="h-7 text-xs"
+            />
+            {stakeholdersWithNotes.length === 0 ? (
+              <p className="text-xs text-muted-foreground text-center py-2">
+                {stakeholders.filter(s => s.note).length === 0 ? "No stakeholder notes yet." : "No matching notes."}
+              </p>
+            ) : (
+              <div className="space-y-1.5 max-h-[160px] overflow-y-auto">
+                {stakeholdersWithNotes.map(s => (
+                  <div key={s.id} className="flex items-start gap-2 p-2 rounded-md bg-muted/30 border border-border/30">
+                    <Badge variant="secondary" className={cn("text-[10px] px-1.5 py-0 h-4 shrink-0", s.badgeBg)}>
+                      {s.roleLabel}
+                    </Badge>
+                    <div className="min-w-0 flex-1">
+                      <span className="text-xs font-medium">{s.contactName}</span>
+                      <p className="text-[11px] text-muted-foreground line-clamp-2 mt-0.5">{s.note}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
 
