@@ -252,7 +252,7 @@ const StakeholderAddDropdown = ({ contacts, excludeIds, onAdd, cellRef }: Stakeh
           className="flex items-center justify-center w-6 h-5 rounded hover:bg-accent/80 text-muted-foreground hover:text-foreground transition-colors shrink-0"
           title="Add contact"
         >
-          <Plus className="h-3.5 w-3.5" />
+          <Plus className="h-4 w-4" />
         </button>
       </PopoverTrigger>
       <PopoverContent
@@ -313,16 +313,11 @@ const StakeholdersSection = ({ deal, queryClient }: { deal: Deal; queryClient: R
   const [noteText, setNoteText] = useState("");
   const [showNotesSummary, setShowNotesSummary] = useState(false);
   const [noteSearch, setNoteSearch] = useState("");
-  const [replacingRole, setReplacingRole] = useState<string | null>(null);
-
-  // Confirmation dialog state for remove/replace
+  // Confirmation dialog state for remove
   const [confirmDialog, setConfirmDialog] = useState<{
     open: boolean;
     stakeholder: DealStakeholder | null;
-    action: "remove" | "replace";
-    replacementContact?: Contact;
-    role?: string;
-  }>({ open: false, stakeholder: null, action: "remove" });
+  }>({ open: false, stakeholder: null });
 
   // Single contacts fetch shared across all 4 roles
   const [allContacts, setAllContacts] = useState<Contact[]>([]);
@@ -392,25 +387,14 @@ const StakeholdersSection = ({ deal, queryClient }: { deal: Deal; queryClient: R
 
   // Prompt before remove - checks if note exists
   const promptRemove = (sh: DealStakeholder) => {
-    setConfirmDialog({ open: true, stakeholder: sh, action: "remove" });
-  };
-
-  // Prompt before replace - when adding to a role that already has a contact
-  const promptReplace = (existingSh: DealStakeholder, newContact: Contact, role: string) => {
-    setConfirmDialog({ open: true, stakeholder: existingSh, action: "replace", replacementContact: newContact, role });
+    setConfirmDialog({ open: true, stakeholder: sh });
   };
 
   const handleConfirmAction = async () => {
-    const { stakeholder, action, replacementContact, role } = confirmDialog;
+    const { stakeholder } = confirmDialog;
     if (!stakeholder) return;
-    
-    if (action === "remove") {
-      await handleRemoveContact(stakeholder.id);
-    } else if (action === "replace" && replacementContact && role) {
-      await handleRemoveContact(stakeholder.id);
-      await handleAddContact(role, replacementContact);
-    }
-    setConfirmDialog({ open: false, stakeholder: null, action: "remove" });
+    await handleRemoveContact(stakeholder.id);
+    setConfirmDialog({ open: false, stakeholder: null });
   };
 
   // Notes summary data
@@ -427,12 +411,12 @@ const StakeholdersSection = ({ deal, queryClient }: { deal: Deal; queryClient: R
 
   return (
     <>
-    <div className="px-3 pt-2.5 pb-2">
+    <div className="px-3 pt-1.5 pb-1">
       <div className="bg-muted/20 border border-border/60 rounded-lg overflow-hidden">
         {/* Section Header */}
-        <div className="flex items-center justify-between px-3 py-2 bg-muted/50 border-b border-border/40">
+        <div className="flex items-center justify-between px-3 py-1.5 bg-muted/50 border-b border-border/40">
           <div className="flex items-center gap-2">
-            <Users className="h-3.5 w-3.5 text-muted-foreground" />
+            <Users className="h-4 w-4 text-muted-foreground" />
             <span className="text-xs font-semibold text-foreground">Stakeholders</span>
           </div>
           <Button
@@ -441,7 +425,7 @@ const StakeholdersSection = ({ deal, queryClient }: { deal: Deal; queryClient: R
             className={cn("h-6 px-2 text-[10px] gap-1", showNotesSummary && "bg-accent")}
             onClick={() => { setShowNotesSummary(!showNotesSummary); setNoteSearch(""); }}
           >
-            <FileText className="h-3 w-3" />
+            <FileText className="h-3.5 w-3.5" />
             Notes {stakeholders.filter(s => s.note).length > 0 && `(${stakeholders.filter(s => s.note).length})`}
           </Button>
         </div>
@@ -463,7 +447,7 @@ const StakeholdersSection = ({ deal, queryClient }: { deal: Deal; queryClient: R
                 key={role}
                 ref={getCellRef}
                 className={cn(
-                  "flex items-start min-w-0 p-2.5 border-l-2 transition-colors hover:bg-muted/30",
+                  "flex items-start min-w-0 px-2 py-1.5 border-l-2 transition-colors hover:bg-muted/30",
                   borderColor,
                   idx < 2 && "border-b border-border/30",
                   idx % 2 === 0 && "border-r border-border/30"
@@ -478,7 +462,7 @@ const StakeholdersSection = ({ deal, queryClient }: { deal: Deal; queryClient: R
                 </span>
 
                 {/* Contact name + inline actions */}
-                <div className="flex flex-col gap-1 min-w-0 flex-1 pl-1">
+                <div className="flex flex-col gap-0.5 min-w-0 flex-1 pl-1">
                   {roleStakeholders.map(sh => (
                     <div
                       key={sh.id}
@@ -499,24 +483,38 @@ const StakeholdersSection = ({ deal, queryClient }: { deal: Deal; queryClient: R
                         <PopoverTrigger asChild>
                           <button
                             className={cn(
-                              "flex items-center justify-center w-5 h-5 rounded transition-all shrink-0",
+                              "flex items-center justify-center w-6 h-6 rounded transition-all shrink-0",
                               sh.note
                                 ? "text-primary hover:bg-primary/10"
                                 : "opacity-0 group-hover/row:opacity-60 hover:!opacity-100 text-muted-foreground hover:bg-accent/80"
                             )}
                             title={sh.note ? "View/Edit note" : "Add note"}
                           >
-                            <Info className="h-3 w-3" />
+                            <Info className="h-3.5 w-3.5" />
                           </button>
                         </PopoverTrigger>
-                        <PopoverContent className="w-60 p-2.5 z-[200]" side="top" align="start" avoidCollisions={true}>
+                        <PopoverContent className="w-[480px] p-3 z-[200]" side="bottom" align="start" avoidCollisions={true}>
+                          <p className="text-[10px] text-muted-foreground mb-1.5">Each line becomes a bullet point</p>
                           <Textarea
                             value={noteText}
                             onChange={(e) => setNoteText(e.target.value)}
-                            placeholder="Add notes about this contact…"
-                            className="text-xs min-h-[60px] resize-none"
+                            placeholder="Add notes about this contact…&#10;Each line = one bullet point"
+                            className="text-xs min-h-[80px] resize-none"
                             autoFocus
                           />
+                          {noteText && (
+                            <div className="mt-2 p-2 rounded-md bg-muted/40 border border-border/30">
+                              <p className="text-[10px] font-medium text-muted-foreground mb-1">Preview:</p>
+                              <ul className="space-y-0.5">
+                                {noteText.split("\n").filter(l => l.trim()).map((line, i) => (
+                                  <li key={i} className="text-xs text-foreground flex items-start gap-1.5">
+                                    <span className="text-muted-foreground shrink-0">•</span>
+                                    <span>{line.trim()}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
                           <Button
                             size="sm"
                             className="mt-2 h-7 text-xs w-full"
@@ -527,89 +525,26 @@ const StakeholdersSection = ({ deal, queryClient }: { deal: Deal; queryClient: R
                         </PopoverContent>
                       </Popover>
 
-                      {/* Replace/Swap button */}
-                      <Popover
-                        open={replacingRole === sh.id}
-                        onOpenChange={(open) => {
-                          if (open) setReplacingRole(sh.id);
-                          else setReplacingRole(null);
-                        }}
-                      >
-                        <PopoverTrigger asChild>
-                          <button
-                            className="opacity-0 group-hover/row:opacity-60 hover:!opacity-100 transition-opacity shrink-0 w-5 h-5 flex items-center justify-center rounded hover:bg-accent/80 text-muted-foreground"
-                            title="Replace contact"
-                          >
-                            <ArrowRight className="h-3 w-3" />
-                          </button>
-                        </PopoverTrigger>
-                        <PopoverContent
-                          className="p-0 z-[200] w-[220px]"
-                          align="start"
-                          side="bottom"
-                          sideOffset={4}
-                          avoidCollisions={true}
-                          onWheel={e => e.stopPropagation()}
-                        >
-                          <Command shouldFilter={false}>
-                            <CommandInput placeholder="Search contacts…" className="h-8 text-xs" />
-                            <CommandList
-                              className="max-h-[180px] overflow-y-auto"
-                              onWheel={e => { e.stopPropagation(); (e.currentTarget as HTMLElement).scrollTop += e.deltaY; }}
-                            >
-                              {allContacts.filter(c => !excludeIds.includes(c.id) || c.id === sh.contact_id).length === 0 ? (
-                                <div className="py-4 text-center text-xs text-muted-foreground">No contacts found.</div>
-                              ) : (
-                                <CommandGroup>
-                                  {allContacts.filter(c => !excludeIds.includes(c.id) && c.id !== sh.contact_id).slice(0, 80).map(c => (
-                                    <CommandItem
-                                      key={c.id}
-                                      value={c.contact_name}
-                                      onSelect={() => {
-                                        setReplacingRole(null);
-                                        promptReplace(sh, c, role);
-                                      }}
-                                      className="cursor-pointer py-1 px-2"
-                                    >
-                                      <div className="flex flex-col min-w-0">
-                                        <span className="text-xs font-medium truncate">{c.contact_name}</span>
-                                        {(c.company_name || c.position) && (
-                                          <span className="text-[10px] text-muted-foreground truncate">
-                                            {[c.company_name, c.position].filter(Boolean).join(" • ")}
-                                          </span>
-                                        )}
-                                      </div>
-                                    </CommandItem>
-                                  ))}
-                                </CommandGroup>
-                              )}
-                            </CommandList>
-                          </Command>
-                        </PopoverContent>
-                      </Popover>
-
                       {/* Remove button */}
                       <button
-                        className="opacity-0 group-hover/row:opacity-60 hover:!opacity-100 transition-opacity shrink-0 w-5 h-5 flex items-center justify-center rounded hover:bg-destructive/10 hover:text-destructive"
+                        className="opacity-0 group-hover/row:opacity-60 hover:!opacity-100 transition-opacity shrink-0 w-6 h-6 flex items-center justify-center rounded hover:bg-destructive/10 hover:text-destructive"
                         onClick={() => promptRemove(sh)}
                         title="Remove"
                       >
-                        <X className="h-3 w-3" />
+                        <X className="h-3.5 w-3.5" />
                       </button>
                     </div>
                   ))}
 
-                  {/* Add dropdown when no contact */}
-                  {!hasContact && (
-                    <div className="h-5 flex items-center">
-                      <StakeholderAddDropdown
-                        contacts={allContacts}
-                        excludeIds={excludeIds}
-                        onAdd={(contact) => handleAddContact(role, contact)}
-                        cellRef={cellRef}
-                      />
-                    </div>
-                  )}
+                  {/* Always show add dropdown */}
+                  <div className="h-5 flex items-center">
+                    <StakeholderAddDropdown
+                      contacts={allContacts}
+                      excludeIds={excludeIds}
+                      onAdd={(contact) => handleAddContact(role, contact)}
+                      cellRef={cellRef}
+                    />
+                  </div>
                 </div>
               </div>
             );
@@ -618,7 +553,7 @@ const StakeholdersSection = ({ deal, queryClient }: { deal: Deal; queryClient: R
 
         {/* Notes Summary Panel */}
         {showNotesSummary && (
-          <div className="border-t border-border/40 p-3 space-y-2">
+          <div className="border-t border-border/40 p-2 space-y-1.5">
             <Input
               placeholder="Search notes…"
               value={noteSearch}
@@ -630,15 +565,22 @@ const StakeholdersSection = ({ deal, queryClient }: { deal: Deal; queryClient: R
                 {stakeholders.filter(s => s.note).length === 0 ? "No stakeholder notes yet." : "No matching notes."}
               </p>
             ) : (
-              <div className="space-y-1.5 max-h-[160px] overflow-y-auto">
+              <div className="space-y-1 max-h-[140px] overflow-y-auto">
                 {stakeholdersWithNotes.map(s => (
-                  <div key={s.id} className="flex items-start gap-2 p-2 rounded-md bg-muted/30 border border-border/30">
+                  <div key={s.id} className="flex items-start gap-2 p-1.5 rounded-md bg-muted/30 border border-border/30">
                     <Badge variant="secondary" className={cn("text-[10px] px-1.5 py-0 h-4 shrink-0", s.badgeBg)}>
                       {s.roleLabel}
                     </Badge>
                     <div className="min-w-0 flex-1">
                       <span className="text-xs font-medium">{s.contactName}</span>
-                      <p className="text-[11px] text-muted-foreground line-clamp-2 mt-0.5">{s.note}</p>
+                      <ul className="mt-0.5 space-y-0">
+                        {(s.note || "").split("\n").filter(l => l.trim()).map((line, i) => (
+                          <li key={i} className="text-[11px] text-muted-foreground flex items-start gap-1">
+                            <span className="shrink-0">•</span>
+                            <span>{line.trim()}</span>
+                          </li>
+                        ))}
+                      </ul>
                     </div>
                   </div>
                 ))}
@@ -651,26 +593,30 @@ const StakeholdersSection = ({ deal, queryClient }: { deal: Deal; queryClient: R
 
     {/* Confirmation Dialog for Remove/Replace */}
     <AlertDialog open={confirmDialog.open} onOpenChange={(open) => {
-      if (!open) setConfirmDialog({ open: false, stakeholder: null, action: "remove" });
+      if (!open) setConfirmDialog({ open: false, stakeholder: null });
     }}>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle className="flex items-center gap-2">
             <AlertTriangle className="h-5 w-5 text-destructive" />
-            {confirmDialog.action === "remove" ? "Remove Stakeholder" : "Replace Stakeholder"}
+            Remove Stakeholder
           </AlertDialogTitle>
           <AlertDialogDescription asChild>
             <div className="space-y-3">
               <p>
-                {confirmDialog.action === "remove"
-                  ? `Are you sure you want to remove "${contactNames[confirmDialog.stakeholder?.contact_id || ""] || "this contact"}" from this deal?`
-                  : `Are you sure you want to replace "${contactNames[confirmDialog.stakeholder?.contact_id || ""] || "this contact"}" with "${confirmDialog.replacementContact?.contact_name || ""}"?`
-                }
+                Are you sure you want to remove "{contactNames[confirmDialog.stakeholder?.contact_id || ""] || "this contact"}" from this deal?
               </p>
               {confirmDialog.stakeholder?.note && (
                 <div className="rounded-md border border-border bg-muted/50 p-3">
                   <p className="text-xs font-medium text-foreground mb-1">Existing Note:</p>
-                  <p className="text-xs text-muted-foreground whitespace-pre-wrap">{confirmDialog.stakeholder.note}</p>
+                  <ul className="space-y-0.5">
+                    {confirmDialog.stakeholder.note.split("\n").filter(l => l.trim()).map((line, i) => (
+                      <li key={i} className="text-xs text-muted-foreground flex items-start gap-1.5">
+                        <span className="shrink-0">•</span>
+                        <span>{line.trim()}</span>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               )}
               {confirmDialog.stakeholder?.note && (
@@ -687,7 +633,7 @@ const StakeholdersSection = ({ deal, queryClient }: { deal: Deal; queryClient: R
             onClick={handleConfirmAction}
             className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
           >
-            {confirmDialog.action === "remove" ? "Remove" : "Replace"}
+            Remove
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
