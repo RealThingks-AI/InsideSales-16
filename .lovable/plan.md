@@ -1,104 +1,66 @@
-# Fix Unresponsive Form Fields in Modal Dialogs
 
-## Problem Analysis
 
-The user reported that when creating a task in the Account section, the form fields (particularly Select dropdowns, Calendar popovers, and other interactive elements) are not responsive/clickable.
+## Fix Stakeholders Section Layout
 
-### Root Cause
+### Current Issues
+- Label width is set to 38% which is too wide, pushing content to the right
+- Text is too small (10px) and hard to read
+- Spacing between elements is cramped
+- The info and + buttons are tiny (18px columns) and hard to click
+- No visual separation between the two columns
+- Empty state looks awkward with invisible spacer divs
+- Dropdown may get clipped or hidden behind other elements
 
-The issue is a **z-index stacking context conflict** between the Dialog component and its child components (Select, Popover, Calendar):
+### Reference Image Analysis
+The uploaded image shows a clean, well-spaced layout:
+- Labels like "Budget Owner :", "Champion :" are left-aligned with readable size
+- Contact names ("Deepak") are clearly visible with good spacing
+- Info (i) and + buttons are well-spaced and easily clickable
+- Two columns with clear visual separation
 
-1. **Dialog** uses `z-50` for both the overlay and content
-2. **Select/Popover/Calendar** dropdowns also use `z-50`
-3. When a Select dropdown opens inside a Dialog, it renders in a portal at the same z-level as the Dialog, causing:
-   - Dropdowns appearing behind the dialog overlay
-   - Click events being intercepted by the overlay
-   - Fields appearing unresponsive
+### Changes (File: `src/components/DealExpandedPanel.tsx`)
 
-### Affected Components
+#### 1. Fix column proportions
+- Change label width from `38%` to `28%` -- labels don't need that much space
+- Give contact names more room with `flex-1`
+- Increase info and + button columns from `18px` to `24px` for better clickability
 
-Based on analysis, these modal components use Select/Popover inside Dialogs and may have the same issue:
+#### 2. Increase text size and spacing
+- Bump label text from `text-[10px]` to `text-xs` (12px)
+- Bump contact name text from `text-[10px]` to `text-xs`
+- Increase row height from `h-4` to `h-5` for better readability
+- Increase gap between rows from `gap-0.5` to `gap-1`
+- Increase grid gap from `gap-y-1` to `gap-y-2` for breathing room between role rows
 
-1. `src/components/tasks/TaskModal.tsx` - Task creation (primary issue reported)
-2. `src/components/AccountModal.tsx` - Account creation/editing
-3. `src/components/ContactModal.tsx` - Contact creation/editing
-4. `src/components/LeadModal.tsx` - Lead creation/editing
-5. `src/components/MeetingModal.tsx` - Meeting creation/editing
-6. `src/components/DealForm.tsx` - Deal form fields
-7. Various detail modals with editable fields
+#### 3. Improve visual styling
+- Add subtle bottom border to each role row for visual separation
+- Style labels with consistent color and colon formatting
+- Add a slight left padding to contact names for alignment
 
-## Solution
+#### 4. Ensure dropdown visibility
+- Add `sideOffset={4}` to the StakeholderAddDropdown's PopoverContent
+- Set `avoidCollisions={true}` (currently `false`) so the dropdown repositions if near edges
+- Ensure z-index `z-[200]` is maintained
+- Set a minimum width of `200px` on the dropdown so it's always usable regardless of cell size
 
-### Approach: Increase z-index for dropdown portals inside dialogs
+#### 5. Improve empty state
+- Show a subtle "No contact" placeholder text instead of an invisible spacer div
+- Style it as muted italic text
 
-The fix involves updating the UI components to use higher z-index values when rendering inside dialogs. We have two options:
+#### 6. Button improvements
+- Make the + button slightly larger and add a subtle hover background
+- Make info button consistently visible (not opacity-50) but muted color, with hover highlight
+- Increase hit area on both buttons
 
-**Option A (Recommended): Update base UI components**
-- Update `SelectContent` to use `z-[100]` instead of `z-50`
-- Update `PopoverContent` to use `z-[100]` instead of `z-50`
-- This fixes the issue globally for all modals
+### Technical Details
 
-**Option B: Add `pointer-events-auto` and higher z-index per usage**
-- Add `className="z-[100] pointer-events-auto"` to each SelectContent/PopoverContent inside dialogs
-- More targeted but requires changes in many files
+All changes are confined to `src/components/DealExpandedPanel.tsx`, specifically the `StakeholdersSection` component (lines ~370-482) and the `StakeholderAddDropdown` component (lines ~220-294).
 
-## Implementation Steps
+Key style changes:
+- Label: `text-xs font-medium text-muted-foreground` with `width: 28%`
+- Contact row: `h-5` with `text-xs` text, `gap-1` between rows
+- Grid: `gap-x-6 gap-y-2.5` for cleaner column/row spacing
+- Info/+ buttons: `w-6 h-5` with proper hover states
+- Dropdown: `avoidCollisions={true}`, min-width 200px, `z-[200]`
+- Empty state: `<span className="text-xs text-muted-foreground/50 italic">--</span>`
 
-### Step 1: Update Select Component (src/components/ui/select.tsx)
-- Change `SelectContent` z-index from `z-50` to `z-[100]`
-- Line 76: Update the className from `relative z-50` to `relative z-[100]`
-
-### Step 2: Update Popover Component (src/components/ui/popover.tsx)
-- Change `PopoverContent` z-index from `z-50` to `z-[100]`
-- Line 20: Update the className from `z-50` to `z-[100]`
-
-### Step 3: Update Tooltip Component (src/components/ui/tooltip.tsx)
-- Verify and update TooltipContent z-index if needed (should be `z-[100]`)
-- This ensures tooltips also appear above dialogs
-
-### Step 4: Verify Calendar interactions
-- The Calendar component already has `pointer-events-auto` class in TaskModal.tsx (line 641)
-- Verify this pattern is applied in all modal calendar usages
-
-## Testing Checklist
-
-After implementation, test these scenarios across ALL modules:
-
-- [ ] Task Modal (Accounts section):
-  - [ ] Module selector dropdown works
-  - [ ] Account selector dropdown works
-  - [ ] Assigned To dropdown works
-  - [ ] Due Date calendar picker works
-  - [ ] Time selector works
-  - [ ] Priority dropdown works
-  - [ ] Status dropdown works
-
-- [ ] Account Modal:
-  - [ ] Region/Country dropdowns work
-  - [ ] Status dropdown works
-  - [ ] Industry dropdown works
-
-- [ ] Contact Modal:
-  - [ ] Account selector dropdown works
-  - [ ] Contact Source dropdown works
-
-- [ ] Lead Modal:
-  - [ ] Account selector dropdown works
-  - [ ] Status/Source dropdowns work
-
-- [ ] Meeting Modal:
-  - [ ] Date/Time pickers work
-  - [ ] Timezone selector works
-  - [ ] Contact/Lead selectors work
-
-- [ ] Deal Form:
-  - [ ] All stage-related dropdowns work
-  - [ ] Date pickers work
-
-## Critical Files for Implementation
-
-- `src/components/ui/select.tsx` - Core Select component z-index fix
-- `src/components/ui/popover.tsx` - Core Popover component z-index fix  
-- `src/components/ui/tooltip.tsx` - Tooltip z-index verification
-- `src/components/tasks/TaskModal.tsx` - Primary affected component to test
-- `src/components/ui/dialog.tsx` - Reference for understanding the z-index structure
