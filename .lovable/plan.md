@@ -1,81 +1,65 @@
 
 
-## Stakeholders Section Enhancement Plan
+## Stakeholders Section Modifications
 
-### Problem
-The stakeholders section in the Deal Expanded Panel has:
-1. No visual boundaries -- it blends into the white background with no card/border styling
-2. No way to replace an existing stakeholder (swap button)
-3. No stakeholder notes summary view or search capability
+### Changes (all in `src/components/DealExpandedPanel.tsx`)
 
-### Changes (Single File: `src/components/DealExpandedPanel.tsx`)
+### 1. Remove "Replace Contact" -- Add "+" to allow multiple contacts per role
 
-#### 1. Visual Styling -- Add Boundaries and Subtle Colors
+**Current**: Each role shows one contact with a replace/swap button. The "+" add button only shows when no contact exists.
 
-**Current**: The section is a plain `div` with only a `border-t` separator. The 2x2 grid of roles has no visual distinction.
+**Change**:
+- Remove the entire replace/swap `Popover` block (lines 530-589) -- delete the `ArrowRight` button and its popover
+- Remove the `replacingRole` state and `promptReplace` function usage from UI
+- Always show the `StakeholderAddDropdown` "+" button for every role, even when contacts already exist (move it from the `!hasContact` conditional to always render after the contact list)
+- This allows adding multiple contacts per role
 
-**Enhancement**:
-- Wrap the entire stakeholders section in a rounded card with a subtle border and light background tint (e.g., `bg-muted/30 border border-border rounded-lg`)
-- Add a section header row: "Stakeholders" label with a Users icon, styled similarly to the "Updates" and "Action Items" headers (dark `bg-muted/50` bar)
-- Each role cell gets a subtle left-colored accent border per role type (Budget Owner = blue, Champion = green, Influencer = amber, Objector = red) for quick visual identification
-- Add subtle hover state on each role row for better interactivity feedback
+### 2. Increase all icon sizes
 
-#### 2. Replace/Swap Button on Hover
+**Current**: Icons are `h-3 w-3` or `h-3.5 w-3.5` throughout the section.
 
-**Current**: When a contact exists for a role, only Info (note) and X (remove) buttons show on hover. The add dropdown only shows when no contact exists.
+**Change**:
+- Header Users icon: `h-3.5 w-3.5` -> `h-4 w-4`
+- Header FileText icon: `h-3 w-3` -> `h-3.5 w-3.5`
+- Info/Note icon: `h-3 w-3` -> `h-3.5 w-3.5`
+- Remove X icon: `h-3 w-3` -> `h-3.5 w-3.5`
+- Add Plus icon in `StakeholderAddDropdown`: `h-3.5 w-3.5` -> `h-4 w-4`
+- AlertTriangle in confirm dialog: keep `h-5 w-5` (already good)
+- Increase touch target buttons from `w-5 h-5` to `w-6 h-6`
 
-**Enhancement**:
-- Add a swap/replace icon button (using `ArrowRight` or a refresh icon from lucide) that appears on hover, positioned between the info and remove buttons
-- Clicking the swap button opens the same `StakeholderAddDropdown` contact picker
-- When a contact is selected from the picker, it triggers the existing `promptReplace()` confirmation flow (which already exists in the code but has no UI trigger)
-- The confirmation dialog already handles showing the existing note warning
+### 3. Fix Note popover position and enhance notes with bullet points
 
-**Technical detail**: Modify the `group/row` hover area (lines 443-501) to include a new replace button. When clicked, it opens a `StakeholderAddDropdown` inline. On contact selection, call `promptReplace(existingSh, newContact, role)`.
+**Current**: Note popover opens with `side="top"` (line 512), width is `w-60`.
 
-#### 3. Stakeholder Notes Summary View
+**Change**:
+- Change `side="top"` to `side="bottom"` so the note popup always opens below the info icon
+- Change width from `w-60` to `w-[480px]` (double the current ~240px)
+- Replace the single `Textarea` with a bullet-point style notes editor:
+  - Store notes as newline-separated bullet items
+  - Display each line as a bullet point (`• `) prefixed entry
+  - Add a small helper text "Each line becomes a bullet point"
+  - When saving, join lines with newlines; when displaying in summary, show as bullet list
 
-**Enhancement**:
-- Add a small "Notes" toggle button in the stakeholders section header
-- When toggled, show a compact summary panel below the grid listing all stakeholders that have notes
-- Each entry shows: Role badge (colored) + Contact name + Note text (truncated)
-- Add a search input at the top of the summary that filters notes by content or contact name
-- The summary is collapsible to avoid taking permanent space
+### 4. Make the section more compact
 
-#### 4. Test End-to-End
+**Current**: Padding is `p-2.5` per cell, header has `py-2`, outer wrapper has `px-3 pt-2.5 pb-2`.
 
-After implementation:
-- Add a contact to a role, add a note, then remove -- verify the confirmation dialog shows the note
-- Hover over an existing stakeholder -- verify the swap button appears
-- Click swap, select a new contact -- verify the replacement confirmation shows
-- Toggle the notes summary -- verify it lists all notes and search works
+**Change**:
+- Reduce outer padding: `px-3 pt-2.5 pb-2` -> `px-3 pt-1.5 pb-1`
+- Reduce header padding: `px-3 py-2` -> `px-3 py-1.5`
+- Reduce cell padding: `p-2.5` -> `px-2 py-1.5`
+- Reduce notes summary padding and max-height
+- Remove extra gap between contacts in multi-contact scenario: `gap-1` -> `gap-0.5`
 
-### Technical Implementation Details
+### Summary of line changes
 
-**Lines affected in `DealExpandedPanel.tsx`**:
+| Area | Lines | What changes |
+|------|-------|-------------|
+| `replacingRole` state removal | 316 | Remove state |
+| Replace popover block | 530-589 | Delete entirely |
+| Add "+" always visible | 602-612 | Remove `!hasContact` condition |
+| Icon sizes | 435, 444, 509, 540, 597, 255 | Increase sizes |
+| Note popover | 512 | `side="top"` -> `side="bottom"`, double width, bullet UI |
+| Compact spacing | 430, 433, 466 | Reduce padding values |
 
-1. **StakeholdersSection return JSX (lines 413-567)**:
-   - Wrap outer div with card styling: `bg-muted/20 border border-border/60 rounded-lg`
-   - Add header bar with icon and "Stakeholders" title + Notes summary toggle
-   - Add role-specific accent colors to `STAKEHOLDER_ROLES` constant (line 203)
-
-2. **Role row rendering (lines 428-517)**:
-   - Add colored left border per role
-   - Add replace button in the hover actions group (between info and remove buttons)
-   - The replace button renders a `StakeholderAddDropdown` that on select calls `promptReplace()`
-
-3. **New Notes Summary sub-component** (added inside StakeholdersSection):
-   - State: `showNotesSummary` boolean, `noteSearch` string
-   - Renders below the grid when toggled
-   - Filters `stakeholders.filter(s => s.note)` and applies search
-   - Each row: colored role badge + contact name + note preview
-
-4. **STAKEHOLDER_ROLES update**:
-   ```text
-   { role: "budget_owner", label: "Budget Owner", color: "blue" }
-   { role: "champion", label: "Champion", color: "green" }
-   { role: "influencer", label: "Influencer", color: "amber" }
-   { role: "objector", label: "Objector", color: "red" }
-   ```
-
-No new files needed. No database changes required. All changes are contained within `DealExpandedPanel.tsx`.
-
+No new files needed. No database changes.
