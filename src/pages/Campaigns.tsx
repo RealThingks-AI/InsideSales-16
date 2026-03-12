@@ -9,23 +9,31 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Plus, Search, Megaphone } from 'lucide-react';
 import { CAMPAIGN_STATUSES, CAMPAIGN_TYPES } from '@/types/campaign';
 import type { Campaign } from '@/types/campaign';
+import { useUserDisplayNames } from '@/hooks/useUserDisplayNames';
+import { useAuth } from '@/hooks/useAuth';
 
 export default function Campaigns() {
   const { campaignsQuery, deleteCampaign } = useCampaigns();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [typeFilter, setTypeFilter] = useState<string>('all');
+  const [ownerFilter, setOwnerFilter] = useState<string>('all');
   const [modalOpen, setModalOpen] = useState(false);
   const [editCampaign, setEditCampaign] = useState<Campaign | null>(null);
   const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null);
 
   const campaigns = campaignsQuery.data ?? [];
 
+  // Collect unique owner IDs for display name resolution
+  const ownerIds = [...new Set(campaigns.map(c => c.owner).filter(Boolean) as string[])];
+  const { displayNames } = useUserDisplayNames(ownerIds);
+
   const filtered = campaigns.filter(c => {
     const matchSearch = c.campaign_name.toLowerCase().includes(search.toLowerCase());
     const matchStatus = statusFilter === 'all' || c.status === statusFilter;
     const matchType = typeFilter === 'all' || c.campaign_type === typeFilter;
-    return matchSearch && matchStatus && matchType;
+    const matchOwner = ownerFilter === 'all' || c.owner === ownerFilter;
+    return matchSearch && matchStatus && matchType && matchOwner;
   });
 
   const handleEdit = (campaign: Campaign) => {
@@ -85,6 +93,19 @@ export default function Campaigns() {
             ))}
           </SelectContent>
         </Select>
+        {ownerIds.length > 0 && (
+          <Select value={ownerFilter} onValueChange={setOwnerFilter}>
+            <SelectTrigger className="w-[160px] h-9">
+              <SelectValue placeholder="Owner" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Owners</SelectItem>
+              {ownerIds.map(id => (
+                <SelectItem key={id} value={id}>{displayNames[id] || id}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
       </div>
 
       {/* Content */}
