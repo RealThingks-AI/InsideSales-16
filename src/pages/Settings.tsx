@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, lazy, Suspense } from "react";
 import { useSearchParams } from "react-router-dom";
 import { cn } from "@/lib/utils";
-import { User, Shield, Mail } from "lucide-react";
+import { User, Shield, Mail, Megaphone } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useUserRole } from "@/hooks/useUserRole";
 import { Skeleton } from "@/components/ui/skeleton";
