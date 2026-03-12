@@ -10,6 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 const AccountSettingsPage = lazy(() => import("@/components/settings/AccountSettingsPage"));
 const AdminSettingsPage = lazy(() => import("@/components/settings/AdminSettingsPage"));
 const EmailCenterPage = lazy(() => import("@/components/settings/EmailCenterPage"));
+const CampaignSettings = lazy(() => import("@/components/settings/CampaignSettings"));
 
 // Loading skeleton for settings content
 const SettingsContentSkeleton = () => (
