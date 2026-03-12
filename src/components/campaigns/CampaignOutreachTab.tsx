@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { useCampaignCommunications, useCampaignContacts } from '@/hooks/useCampaigns';
+import { useCampaignCommunications, useCampaignContacts, useCampaignAccounts } from '@/hooks/useCampaigns';
+import { useUserDisplayNames } from '@/hooks/useUserDisplayNames';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -26,10 +27,12 @@ interface Props {
 export function CampaignOutreachTab({ campaignId }: Props) {
   const { query, addCommunication } = useCampaignCommunications(campaignId);
   const contactsQuery = useCampaignContacts(campaignId);
+  const accountsQuery = useCampaignAccounts(campaignId);
   const [logOpen, setLogOpen] = useState(false);
   const [form, setForm] = useState({
     communication_type: 'Email',
     contact_id: '',
+    account_id: '',
     subject: '',
     body: '',
     email_type: '',
@@ -40,12 +43,17 @@ export function CampaignOutreachTab({ campaignId }: Props) {
     outcome: '',
   });
 
+  // Collect owner IDs from communications for display name resolution
+  const ownerIds = [...new Set((query.data || []).filter(c => c.owner || c.created_by).map(c => c.owner || c.created_by).filter(Boolean) as string[])];
+  const { displayNames } = useUserDisplayNames(ownerIds);
+
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
 
   const handleLog = async () => {
     await addCommunication.mutateAsync({
       communication_type: form.communication_type,
       contact_id: form.contact_id || null,
+      account_id: form.account_id || null,
       subject: form.subject || null,
       body: form.body || null,
       email_type: form.email_type || null,
@@ -56,10 +64,11 @@ export function CampaignOutreachTab({ campaignId }: Props) {
       outcome: form.outcome || null,
     });
     setLogOpen(false);
-    setForm({ communication_type: 'Email', contact_id: '', subject: '', body: '', email_type: '', email_status: 'Sent', linkedin_status: '', call_outcome: '', notes: '', outcome: '' });
+    setForm({ communication_type: 'Email', contact_id: '', account_id: '', subject: '', body: '', email_type: '', email_status: 'Sent', linkedin_status: '', call_outcome: '', notes: '', outcome: '' });
   };
 
   const contacts = contactsQuery.query.data || [];
+  const accounts = accountsQuery.query.data || [];
 
   return (
     <div className="p-4">
@@ -78,8 +87,10 @@ export function CampaignOutreachTab({ campaignId }: Props) {
             <TableRow>
               <TableHead>Type</TableHead>
               <TableHead>Contact</TableHead>
+              <TableHead>Account</TableHead>
               <TableHead>Subject</TableHead>
               <TableHead>Status/Outcome</TableHead>
+              <TableHead>Owner</TableHead>
               <TableHead>Date</TableHead>
               <TableHead>Notes</TableHead>
             </TableRow>
@@ -88,6 +99,8 @@ export function CampaignOutreachTab({ campaignId }: Props) {
             {query.data.map(c => {
               const Icon = typeIcons[c.communication_type] || Mail;
               const statusText = c.email_status || c.call_outcome || c.linkedin_status || c.outcome || '—';
+              const ownerId = c.owner || c.created_by;
+              const ownerName = ownerId ? (displayNames[ownerId] || '—') : '—';
               return (
                 <TableRow key={c.id}>
                   <TableCell>
@@ -97,8 +110,10 @@ export function CampaignOutreachTab({ campaignId }: Props) {
                     </div>
                   </TableCell>
                   <TableCell className="text-sm">{(c as any).contacts?.contact_name || '—'}</TableCell>
+                  <TableCell className="text-sm">{(c as any).accounts?.account_name || '—'}</TableCell>
                   <TableCell className="text-sm">{c.subject || '—'}</TableCell>
                   <TableCell className="text-sm">{statusText}</TableCell>
+                  <TableCell className="text-sm">{ownerName}</TableCell>
                   <TableCell className="text-sm">{format(new Date(c.communication_date), 'dd MMM yyyy')}</TableCell>
                   <TableCell className="text-sm max-w-[200px] truncate">{c.notes || '—'}</TableCell>
                 </TableRow>
@@ -135,6 +150,18 @@ export function CampaignOutreachTab({ campaignId }: Props) {
               </div>
             </div>
             <div>
+              <Label>Account</Label>
+              <Select value={form.account_id} onValueChange={v => set('account_id', v)}>
+                <SelectTrigger className="h-9"><SelectValue placeholder="Select account (optional)" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">None</SelectItem>
+                  {accounts.map(a => (
+                    <SelectItem key={a.account_id} value={a.account_id}>{a.accounts?.account_name || a.account_id}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
               <Label>Subject</Label>
               <Input value={form.subject} onChange={e => set('subject', e.target.value)} className="h-9" />
             </div>
@@ -169,12 +196,25 @@ export function CampaignOutreachTab({ campaignId }: Props) {
             )}
 
             {form.communication_type === 'LinkedIn' && (
+              <>
+                <div>
+                  <Label>LinkedIn Status</Label>
+                  <Select value={form.linkedin_status} onValueChange={v => set('linkedin_status', v)}>
+                    <SelectTrigger className="h-9"><SelectValue placeholder="Select status" /></SelectTrigger>
+                    <SelectContent>{LINKEDIN_STATUSES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Message Body</Label>
+                  <Textarea value={form.body} onChange={e => set('body', e.target.value)} rows={3} placeholder="LinkedIn message content..." />
+                </div>
+              </>
+            )}
+
+            {(form.communication_type === 'Email') && (
               <div>
-                <Label>LinkedIn Status</Label>
-                <Select value={form.linkedin_status} onValueChange={v => set('linkedin_status', v)}>
-                  <SelectTrigger className="h-9"><SelectValue placeholder="Select status" /></SelectTrigger>
-                  <SelectContent>{LINKEDIN_STATUSES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
-                </Select>
+                <Label>Email Body</Label>
+                <Textarea value={form.body} onChange={e => set('body', e.target.value)} rows={3} placeholder="Email body content..." />
               </div>
             )}
 
