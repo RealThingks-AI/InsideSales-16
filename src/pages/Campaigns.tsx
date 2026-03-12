@@ -9,6 +9,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Plus, Search, Megaphone } from 'lucide-react';
 import { CAMPAIGN_STATUSES, CAMPAIGN_TYPES } from '@/types/campaign';
 import type { Campaign } from '@/types/campaign';
+import { useUserDisplayNames } from '@/hooks/useUserDisplayNames';
+import { useAuth } from '@/hooks/useAuth';
 
 export default function Campaigns() {
   const { campaignsQuery, deleteCampaign } = useCampaigns();
