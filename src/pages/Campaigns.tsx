@@ -32,7 +32,8 @@ export default function Campaigns() {
     const matchSearch = c.campaign_name.toLowerCase().includes(search.toLowerCase());
     const matchStatus = statusFilter === 'all' || c.status === statusFilter;
     const matchType = typeFilter === 'all' || c.campaign_type === typeFilter;
-    return matchSearch && matchStatus && matchType;
+    const matchOwner = ownerFilter === 'all' || c.owner === ownerFilter;
+    return matchSearch && matchStatus && matchType && matchOwner;
   });
 
   const handleEdit = (campaign: Campaign) => {
