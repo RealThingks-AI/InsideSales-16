@@ -1,65 +1,91 @@
 
 
-## Stakeholders Section Modifications
+## Fix Note Editor Bullet Point & Stakeholders Layout Issues
 
-### Changes (all in `src/components/DealExpandedPanel.tsx`)
+### Issues Found
 
-### 1. Remove "Replace Contact" -- Add "+" to allow multiple contacts per role
+1. **Bullet point moves when typing**: `autoFocus` on the Textarea (line 633) places the cursor at position 0 (before `"• "`), so typing inserts text before the bullet instead of after it.
 
-**Current**: Each role shows one contact with a replace/swap button. The "+" add button only shows when no contact exists.
+2. **Notes panel lacks proper scrollbar**: The notes summary panel (line 580-679) has a `max-h-[280px]` on the inner div but the outer wrapper has no scroll constraint, so it still pushes content.
 
-**Change**:
-- Remove the entire replace/swap `Popover` block (lines 530-589) -- delete the `ArrowRight` button and its popover
-- Remove the `replacingRole` state and `promptReplace` function usage from UI
-- Always show the `StakeholderAddDropdown` "+" button for every role, even when contacts already exist (move it from the `!hasContact` conditional to always render after the contact list)
-- This allows adding multiple contacts per role
+3. **Stakeholders section grows unbounded**: The `StakeholdersSection` component has no max-height. When the Notes panel is open with many notes, it consumes all vertical space, squishing the Updates and Action Items sections to near-zero height.
 
-### 2. Increase all icon sizes
+### Changes (single file: `src/components/DealExpandedPanel.tsx`)
 
-**Current**: Icons are `h-3 w-3` or `h-3.5 w-3.5` throughout the section.
+#### Fix 1: Bullet cursor positioning (line 628-634)
 
-**Change**:
-- Header Users icon: `h-3.5 w-3.5` -> `h-4 w-4`
-- Header FileText icon: `h-3 w-3` -> `h-3.5 w-3.5`
-- Info/Note icon: `h-3 w-3` -> `h-3.5 w-3.5`
-- Remove X icon: `h-3 w-3` -> `h-3.5 w-3.5`
-- Add Plus icon in `StakeholderAddDropdown`: `h-3.5 w-3.5` -> `h-4 w-4`
-- AlertTriangle in confirm dialog: keep `h-5 w-5` (already good)
-- Increase touch target buttons from `w-5 h-5` to `w-6 h-6`
+Replace `autoFocus` on the Textarea with a `ref` callback that focuses the element AND places the cursor at the end of the text (after `"• "`):
 
-### 3. Fix Note popover position and enhance notes with bullet points
+```tsx
+<Textarea
+  value={noteText}
+  onChange={(e) => setNoteText(e.target.value)}
+  onKeyDown={handleNoteKeyDown}
+  className="min-h-[100px] text-xs resize-none"
+  ref={(el) => {
+    if (el) {
+      el.focus();
+      const len = el.value.length;
+      el.selectionStart = len;
+      el.selectionEnd = len;
+    }
+  }}
+/>
+```
 
-**Current**: Note popover opens with `side="top"` (line 512), width is `w-60`.
+#### Fix 2: Constrain Stakeholders section height
 
-**Change**:
-- Change `side="top"` to `side="bottom"` so the note popup always opens below the info icon
-- Change width from `w-60` to `w-[480px]` (double the current ~240px)
-- Replace the single `Textarea` with a bullet-point style notes editor:
-  - Store notes as newline-separated bullet items
-  - Display each line as a bullet point (`• `) prefixed entry
-  - Add a small helper text "Each line becomes a bullet point"
-  - When saving, join lines with newlines; when displaying in summary, show as bullet list
+Wrap the StakeholdersSection output in a container with `max-h` and `overflow-y-auto` so it scrolls when content is large. Change the outer div (line 462) from:
 
-### 4. Make the section more compact
+```tsx
+<div className="px-3 pt-1.5 pb-1">
+```
 
-**Current**: Padding is `p-2.5` per cell, header has `py-2`, outer wrapper has `px-3 pt-2.5 pb-2`.
+to:
 
-**Change**:
-- Reduce outer padding: `px-3 pt-2.5 pb-2` -> `px-3 pt-1.5 pb-1`
-- Reduce header padding: `px-3 py-2` -> `px-3 py-1.5`
-- Reduce cell padding: `p-2.5` -> `px-2 py-1.5`
-- Reduce notes summary padding and max-height
-- Remove extra gap between contacts in multi-contact scenario: `gap-1` -> `gap-0.5`
+```tsx
+<div className="px-3 pt-1.5 pb-1 max-h-[45%] overflow-y-auto shrink-0">
+```
 
-### Summary of line changes
+However, since this is not inside a flex parent that uses percentage heights well, a better approach is to change the parent layout. The parent (line 1182) is:
 
-| Area | Lines | What changes |
-|------|-------|-------------|
-| `replacingRole` state removal | 316 | Remove state |
-| Replace popover block | 530-589 | Delete entirely |
-| Add "+" always visible | 602-612 | Remove `!hasContact` condition |
-| Icon sizes | 435, 444, 509, 540, 597, 255 | Increase sizes |
-| Note popover | 512 | `side="top"` -> `side="bottom"`, double width, bullet UI |
-| Compact spacing | 430, 433, 466 | Reduce padding values |
+```tsx
+<div className="flex-1 min-h-0 flex flex-col overflow-hidden gap-1">
+```
 
-No new files needed. No database changes.
+The fix: Make the StakeholdersSection a flex item that can shrink, and give it a max-height so it doesn't dominate. Change line 1184 from:
+
+```tsx
+<StakeholdersSection deal={deal} queryClient={queryClient} />
+```
+
+to wrap it in a constrained container:
+
+```tsx
+<div className="shrink-0 max-h-[40%] overflow-y-auto">
+  <StakeholdersSection deal={deal} queryClient={queryClient} />
+</div>
+```
+
+This ensures:
+- Stakeholders section gets at most 40% of the panel height
+- When content exceeds that, a scrollbar appears
+- Updates and Action Items always get their fair share of space
+
+#### Fix 3: Ensure notes panel scrolls properly
+
+The notes summary panel (line 596) already has `max-h-[280px] overflow-y-auto`, but when inside the constrained container from Fix 2, this works correctly. No additional change needed here -- the outer scroll from Fix 2 handles it.
+
+### Summary
+
+| Change | Line(s) | Description |
+|--------|---------|-------------|
+| Replace `autoFocus` with ref callback | 628-634 | Cursor placed after bullet on open |
+| Wrap StakeholdersSection in scrollable container | 1184 | Max 40% height with scrollbar |
+
+### Technical Notes
+
+- The ref callback fires on every render, but since `el.focus()` is idempotent when already focused, this is harmless
+- The `max-h-[40%]` works because the parent has `flex-1 min-h-0` which resolves to an actual pixel height
+- Updates and Action Items sections keep their `flex-1 min-h-0` with `h-[220px]`, ensuring they share remaining space equally
+
