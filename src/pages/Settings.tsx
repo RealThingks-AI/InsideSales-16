@@ -134,6 +134,8 @@ const Settings = () => {
         return <AdminSettingsPage defaultSection={section} />;
       case "email":
         return <EmailCenterPage defaultTab={section} />;
+      case "campaigns":
+        return <CampaignSettings />;
       default:
         return <AccountSettingsPage />;
     }

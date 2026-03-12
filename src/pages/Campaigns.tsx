@@ -93,6 +93,19 @@ export default function Campaigns() {
             ))}
           </SelectContent>
         </Select>
+        {ownerIds.length > 0 && (
+          <Select value={ownerFilter} onValueChange={setOwnerFilter}>
+            <SelectTrigger className="w-[160px] h-9">
+              <SelectValue placeholder="Owner" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Owners</SelectItem>
+              {ownerIds.map(id => (
+                <SelectItem key={id} value={id}>{displayNames[id] || id}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
       </div>
 
       {/* Content */}
