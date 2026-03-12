@@ -219,9 +219,35 @@ export function useCampaignCommunications(campaignId: string | null) {
       const { error } = await supabase.from('campaign_communications').insert({
         ...comm,
         campaign_id: campaignId,
+        owner: user!.id,
         created_by: user!.id,
       } as any);
       if (error) throw error;
+
+      // Cross-link email communications to email_history for activity tracking
+      if (comm.communication_type === 'Email' && comm.contact_id) {
+        // Fetch contact email for the record
+        const { data: contact } = await supabase
+          .from('contacts')
+          .select('email, contact_name')
+          .eq('id', comm.contact_id)
+          .single();
+
+        if (contact?.email) {
+          const { data: userData } = await supabase.auth.getUser();
+          await supabase.from('email_history').insert({
+            subject: comm.subject || 'Campaign Email',
+            sender_email: userData?.user?.email || 'unknown',
+            recipient_email: contact.email,
+            recipient_name: contact.contact_name,
+            contact_id: comm.contact_id,
+            account_id: comm.account_id || null,
+            sent_by: user!.id,
+            status: (comm.email_status || 'sent').toLowerCase(),
+            body: comm.body || null,
+          } as any);
+        }
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['campaign_communications', campaignId] });
