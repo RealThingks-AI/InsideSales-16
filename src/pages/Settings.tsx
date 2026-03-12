@@ -48,6 +48,12 @@ const tabs: SettingsTab[] = [
     label: "Email Center",
     icon: Mail,
   },
+  {
+    id: "campaigns",
+    label: "Campaigns",
+    icon: Megaphone,
+    adminOnly: true,
+  },
 ];
 
 const Settings = () => {
