@@ -17,11 +17,16 @@ export default function Campaigns() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [typeFilter, setTypeFilter] = useState<string>('all');
+  const [ownerFilter, setOwnerFilter] = useState<string>('all');
   const [modalOpen, setModalOpen] = useState(false);
   const [editCampaign, setEditCampaign] = useState<Campaign | null>(null);
   const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null);
 
   const campaigns = campaignsQuery.data ?? [];
+
+  // Collect unique owner IDs for display name resolution
+  const ownerIds = [...new Set(campaigns.map(c => c.owner).filter(Boolean) as string[])];
+  const { displayNames } = useUserDisplayNames(ownerIds);
 
   const filtered = campaigns.filter(c => {
     const matchSearch = c.campaign_name.toLowerCase().includes(search.toLowerCase());
