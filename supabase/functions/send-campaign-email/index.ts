@@ -54,13 +54,12 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Check Azure config
     const azureConfig = getAzureEmailConfig();
     if (!azureConfig) {
       console.error("Azure email credentials not configured");
       return new Response(JSON.stringify({
         success: false,
-        error: "Email sending is not configured. Please ask your administrator to set up Azure email credentials (AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET, AZURE_SENDER_EMAIL) in Supabase Edge Function secrets.",
+        error: "Email sending is not configured. Please ask your administrator to set up Azure email credentials.",
         errorCode: "NOT_CONFIGURED",
       }), {
         status: 500,
@@ -81,7 +80,6 @@ Deno.serve(async (req) => {
       console.error("Failed to get Azure access token:", errMsg);
 
       // Log failed communication
-      const messageId = crypto.randomUUID();
       await supabaseClient.from("campaign_communications").insert({
         campaign_id: payload.campaign_id,
         contact_id: payload.contact_id,
@@ -93,7 +91,6 @@ Deno.serve(async (req) => {
         delivery_status: "failed",
         sent_via: "azure",
         template_id: payload.template_id || null,
-        message_id: messageId,
         thread_id: payload.thread_id || null,
         parent_id: payload.parent_id || null,
         owner: user.id,
@@ -125,7 +122,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Send email
+    // Send email (two-step: draft + send, captures Graph metadata)
     const result = await sendEmailViaGraph(
       accessToken,
       actualSenderEmail,
@@ -136,11 +133,13 @@ Deno.serve(async (req) => {
     );
 
     const deliveryStatus = result.success ? "sent" : "failed";
-    const messageId = crypto.randomUUID();
+
+    // Use Graph's real IDs instead of random UUIDs
+    const messageId = result.internetMessageId || crypto.randomUUID();
     const threadId = payload.thread_id || null;
     const parentId = payload.parent_id || null;
 
-    // Log to campaign_communications
+    // Log to campaign_communications with Graph metadata
     const { data: commRecord, error: commError } = await supabaseClient
       .from("campaign_communications")
       .insert({
@@ -157,6 +156,9 @@ Deno.serve(async (req) => {
         message_id: messageId,
         thread_id: threadId,
         parent_id: parentId,
+        graph_message_id: result.graphMessageId || null,
+        internet_message_id: result.internetMessageId || null,
+        conversation_id: result.conversationId || null,
         owner: user.id,
         created_by: user.id,
         notes: result.error ? `Send error: ${result.error.substring(0, 500)}` : null,
@@ -169,7 +171,7 @@ Deno.serve(async (req) => {
       console.error("Communication log error:", commError);
     }
 
-    // Log to email_history
+    // Log to email_history with internet_message_id for cross-referencing
     await supabaseClient.from("email_history").insert({
       subject: payload.subject,
       body: payload.body,
@@ -181,6 +183,7 @@ Deno.serve(async (req) => {
       account_id: payload.account_id || null,
       status: deliveryStatus,
       sent_at: new Date().toISOString(),
+      internet_message_id: result.internetMessageId || null,
     });
 
     return new Response(
@@ -189,6 +192,7 @@ Deno.serve(async (req) => {
         delivery_status: deliveryStatus,
         communication_id: commRecord?.id,
         message_id: messageId,
+        conversation_id: result.conversationId || null,
         error: result.error || undefined,
         errorCode: result.errorCode || undefined,
       }),
