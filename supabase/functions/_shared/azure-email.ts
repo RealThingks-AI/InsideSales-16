@@ -1,5 +1,5 @@
 // Shared Microsoft Graph email sending utility
-// Used by send-campaign-email and daily-action-reminders
+// Used by send-campaign-email, check-email-replies, and daily-action-reminders
 
 export interface AzureEmailConfig {
   tenantId: string;
@@ -12,6 +12,9 @@ export interface SendEmailResult {
   success: boolean;
   error?: string;
   errorCode?: string;
+  graphMessageId?: string;
+  internetMessageId?: string;
+  conversationId?: string;
 }
 
 export function getAzureEmailConfig(): AzureEmailConfig | null {
@@ -48,6 +51,11 @@ export async function getGraphAccessToken(config: AzureEmailConfig): Promise<str
   return data.access_token;
 }
 
+/**
+ * Two-step send: Create draft → send it.
+ * This captures the Graph message ID, internetMessageId, and conversationId
+ * which are needed for reply threading/tracking.
+ */
 export async function sendEmailViaGraph(
   accessToken: string,
   senderEmail: string,
@@ -56,35 +64,70 @@ export async function sendEmailViaGraph(
   subject: string,
   htmlBody: string,
 ): Promise<SendEmailResult> {
-  const sendUrl = `https://graph.microsoft.com/v1.0/users/${senderEmail}/sendMail`;
-  const emailPayload = {
-    message: {
-      subject,
-      body: { contentType: "HTML", content: htmlBody },
-      toRecipients: [{ emailAddress: { address: recipientEmail, name: recipientName } }],
-    },
-    saveToSentItems: true,
+  // Step 1: Create a draft message
+  const createUrl = `https://graph.microsoft.com/v1.0/users/${senderEmail}/messages`;
+  const messagePayload = {
+    subject,
+    body: { contentType: "HTML", content: htmlBody },
+    toRecipients: [{ emailAddress: { address: recipientEmail, name: recipientName } }],
   };
 
-  const resp = await fetch(sendUrl, {
+  const createResp = await fetch(createUrl, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${accessToken}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify(emailPayload),
+    body: JSON.stringify(messagePayload),
   });
 
-  if (!resp.ok) {
-    const errBody = await resp.text();
+  if (!createResp.ok) {
+    const errBody = await createResp.text();
+    let errorCode = "DRAFT_FAILED";
+    try {
+      const parsed = JSON.parse(errBody);
+      errorCode = parsed?.error?.code || "DRAFT_FAILED";
+    } catch { /* ignore */ }
+    console.error(`Graph create draft failed for ${recipientEmail}: ${createResp.status} ${errBody}`);
+    return { success: false, error: errBody, errorCode };
+  }
+
+  const draftMessage = await createResp.json();
+  const graphMessageId = draftMessage.id;
+  const internetMessageId = draftMessage.internetMessageId || null;
+  const conversationId = draftMessage.conversationId || null;
+
+  console.log(`Draft created: graphId=${graphMessageId}, internetMsgId=${internetMessageId}, convId=${conversationId}`);
+
+  // Step 2: Send the draft
+  const sendUrl = `https://graph.microsoft.com/v1.0/users/${senderEmail}/messages/${graphMessageId}/send`;
+  const sendResp = await fetch(sendUrl, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: "null",
+  });
+
+  if (!sendResp.ok) {
+    const errBody = await sendResp.text();
     let errorCode = "SEND_FAILED";
     try {
       const parsed = JSON.parse(errBody);
       errorCode = parsed?.error?.code || "SEND_FAILED";
     } catch { /* ignore */ }
-    console.error(`Graph sendMail failed for ${recipientEmail}: ${resp.status} ${errBody}`);
-    return { success: false, error: errBody, errorCode };
+    console.error(`Graph send draft failed for ${recipientEmail}: ${sendResp.status} ${errBody}`);
+    return { success: false, error: errBody, errorCode, graphMessageId, internetMessageId, conversationId };
   }
 
-  return { success: true };
+  // Consume empty response body
+  await sendResp.text();
+
+  return {
+    success: true,
+    graphMessageId,
+    internetMessageId,
+    conversationId,
+  };
 }
