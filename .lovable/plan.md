@@ -1,91 +1,61 @@
 
 
-## Fix Note Editor Bullet Point & Stakeholders Layout Issues
+## Fix Campaign Email Outreach Issues
 
-### Issues Found
+### Issues Identified
 
-1. **Bullet point moves when typing**: `autoFocus` on the Textarea (line 633) places the cursor at position 0 (before `"• "`), so typing inserts text before the bullet instead of after it.
+**1. Emails sent from shared CRM address instead of logged-in user's email**
 
-2. **Notes panel lacks proper scrollbar**: The notes summary panel (line 580-679) has a `max-h-[280px]` on the inner div but the outer wrapper has no scroll constraint, so it still pushes content.
+The `send-campaign-email` edge function uses `azureConfig.senderEmail` (the `AZURE_SENDER_EMAIL` env var, set to `crm@realthingks.com`) as the sender for Microsoft Graph's `sendMail` endpoint. This is a shared mailbox. To send as the logged-in user, the function should use the user's email from `user.email` as the sender in the Graph API call — Microsoft Graph supports `sendMail` on behalf of any licensed user in the tenant when using client credentials with `Mail.Send` application permission.
 
-3. **Stakeholders section grows unbounded**: The `StakeholdersSection` component has no max-height. When the Notes panel is open with many notes, it consumes all vertical space, squishing the Updates and Action Items sections to near-zero height.
+**Changes:**
+- `supabase/functions/send-campaign-email/index.ts`: Use `user.email` as the sender email for `sendEmailViaGraph()` instead of `azureConfig.senderEmail`. Keep `azureConfig.senderEmail` as fallback if user email is unavailable. Also update `sender_email` in both `campaign_communications` and `email_history` inserts to reflect the actual sender.
+- `supabase/functions/_shared/azure-email.ts`: No changes needed — the `sendEmailViaGraph` function already accepts `senderEmail` as a parameter.
 
-### Changes (single file: `src/components/DealExpandedPanel.tsx`)
+**2. Email thread/replies not tracked — no reply detection**
 
-#### Fix 1: Bullet cursor positioning (line 628-634)
+The system sends emails via Microsoft Graph but has no mechanism to detect incoming replies. The Graph API does return a server-assigned `Message-ID` and `Conversation-ID`, but the current code:
+- Generates its own `messageId` via `crypto.randomUUID()` instead of capturing Graph's
+- Has no webhook or polling to check for replies in the user's mailbox
 
-Replace `autoFocus` on the Textarea with a `ref` callback that focuses the element AND places the cursor at the end of the text (after `"• "`):
+This is an architectural limitation — Microsoft Graph requires either:
+- A webhook subscription (`/subscriptions`) to get notified of new messages, or
+- Periodic polling of the user's inbox for messages in the same conversation
 
-```tsx
-<Textarea
-  value={noteText}
-  onChange={(e) => setNoteText(e.target.value)}
-  onKeyDown={handleNoteKeyDown}
-  className="min-h-[100px] text-xs resize-none"
-  ref={(el) => {
-    if (el) {
-      el.focus();
-      const len = el.value.length;
-      el.selectionStart = len;
-      el.selectionEnd = len;
-    }
-  }}
-/>
-```
+**Feasible improvement for now:**
+- Capture the actual Graph `Message-ID` from the send response headers (Graph returns `202 Accepted` with no body for `sendMail`, so we'd need to use `messages` endpoint + `send` instead to get the ID). As a practical step, switch to the two-step approach: create draft via `POST /users/{email}/messages`, then send via `POST /users/{email}/messages/{id}/send`. The draft creation returns the `internetMessageId` and `conversationId`.
+- Store these in `campaign_communications` for future thread correlation.
+- Add a note in the UI that reply tracking requires manual logging for now, with a visible "Log Reply" button.
 
-#### Fix 2: Constrain Stakeholders section height
+**However**, full reply detection requires either a Graph webhook or a polling function — this is a larger feature. For this cycle, I will:
+- Add a prominent "Log Reply" action button in the outreach table for email records
+- Pre-fill the log form with the original thread context (contact, account, subject with "Re:" prefix)
+- Set `email_status` to "Replied" for tracked replies
 
-Wrap the StakeholdersSection output in a container with `max-h` and `overflow-y-auto` so it scrolls when content is large. Change the outer div (line 462) from:
+**3. "manual" delivery status showing for emails**
 
-```tsx
-<div className="px-3 pt-1.5 pb-1">
-```
+In `handleLogCommunication` (line 180), when manually logging an email activity, `delivery_status` is set to `"manual"`. This is technically correct (it distinguishes logged-from-outside vs sent-via-CRM emails) but confusing to users.
 
-to:
+**Fix:** Change the display label from "manual" to "Logged" in the `deliveryBadge` function. Keep the underlying value as "manual" in the database but display it more clearly.
 
-```tsx
-<div className="px-3 pt-1.5 pb-1 max-h-[45%] overflow-y-auto shrink-0">
-```
+**4. Additional bugs found:**
 
-However, since this is not inside a flex parent that uses percentage heights well, a better approach is to change the parent layout. The parent (line 1182) is:
+- **Log Activity modal shows Email fields for all channels**: The `logForm` defaults `communication_type` to "Email" and the modal always shows `email_status` field. When logging a Call, the email-specific fields should be hidden (partially handled but `email_status` still defaults).
+- **"Send Email" button visible on "All" tab**: Users might click Send Email from the All tab context where no channel filter is applied — this works but could be confusing since it opens the compose modal without channel context.
+- **Thread view groups by contact, not by email conversation**: The threads view groups all communications by `contact_id` rather than by actual email threads (`thread_id`). This means emails, calls, and LinkedIn messages all merge into one "thread" per contact.
 
-```tsx
-<div className="flex-1 min-h-0 flex flex-col overflow-hidden gap-1">
-```
+### Implementation Plan
 
-The fix: Make the StakeholdersSection a flex item that can shrink, and give it a max-height so it doesn't dominate. Change line 1184 from:
+#### File: `supabase/functions/send-campaign-email/index.ts`
+- After authenticating user, use `user.email` as sender email for Graph API
+- Pass `user.email` (with `azureConfig.senderEmail` as fallback) to `sendEmailViaGraph`
+- Update `sender_email` in `campaign_communications` and `email_history` inserts
 
-```tsx
-<StakeholdersSection deal={deal} queryClient={queryClient} />
-```
+#### File: `src/components/campaigns/CampaignCommunications.tsx`
+- **deliveryBadge**: Change display of "manual" to "Logged" with a neutral style
+- **Add "Log Reply" action**: For email records, add a button that opens the log modal pre-filled with the contact, account, subject ("Re: ..."), and `email_status: "Replied"`
+- **Expanded row cleanup**: Don't show "Delivery: manual (via manual)" — simplify to just "Logged manually"
 
-to wrap it in a constrained container:
-
-```tsx
-<div className="shrink-0 max-h-[40%] overflow-y-auto">
-  <StakeholdersSection deal={deal} queryClient={queryClient} />
-</div>
-```
-
-This ensures:
-- Stakeholders section gets at most 40% of the panel height
-- When content exceeds that, a scrollbar appears
-- Updates and Action Items always get their fair share of space
-
-#### Fix 3: Ensure notes panel scrolls properly
-
-The notes summary panel (line 596) already has `max-h-[280px] overflow-y-auto`, but when inside the constrained container from Fix 2, this works correctly. No additional change needed here -- the outer scroll from Fix 2 handles it.
-
-### Summary
-
-| Change | Line(s) | Description |
-|--------|---------|-------------|
-| Replace `autoFocus` with ref callback | 628-634 | Cursor placed after bullet on open |
-| Wrap StakeholdersSection in scrollable container | 1184 | Max 40% height with scrollbar |
-
-### Technical Notes
-
-- The ref callback fires on every render, but since `el.focus()` is idempotent when already focused, this is harmless
-- The `max-h-[40%]` works because the parent has `flex-1 min-h-0` which resolves to an actual pixel height
-- Updates and Action Items sections keep their `flex-1 min-h-0` with `h-[220px]`, ensuring they share remaining space equally
+#### Deployment
+- Redeploy `send-campaign-email` edge function after changes
 
