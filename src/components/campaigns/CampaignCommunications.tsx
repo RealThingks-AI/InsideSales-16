@@ -134,26 +134,67 @@ export function CampaignCommunications({ campaignId, isCampaignEnded }: Props) {
     noAnswer: callComms.filter((c: any) => c.call_outcome === "No Answer" || c.call_outcome === "Voicemail").length,
   }), [callComms]);
 
-  // --- Threads (for All tab only) ---
+  // --- Threads: group emails by conversation_id, other comms by contact_id ---
   const threads = useMemo(() => {
-    const byContact: Record<string, any[]> = {};
+    const emailThreads: Record<string, any[]> = {};
+    const contactActivity: Record<string, any[]> = {};
+
     communications.forEach((c: any) => {
-      const key = c.contact_id || "no-contact";
-      if (!byContact[key]) byContact[key] = [];
-      byContact[key].push(c);
+      // Group emails with conversation_id into real email threads
+      if (c.communication_type === "Email" && c.conversation_id) {
+        const key = c.conversation_id;
+        if (!emailThreads[key]) emailThreads[key] = [];
+        emailThreads[key].push(c);
+      } else {
+        // Group non-email or non-threaded emails by contact
+        const key = c.contact_id || "no-contact";
+        if (!contactActivity[key]) contactActivity[key] = [];
+        contactActivity[key].push(c);
+      }
     });
-    return Object.entries(byContact).map(([contactId, msgs]) => ({
-      contactId,
-      contactName: msgs[0]?.contacts?.contact_name || "Unknown",
-      accountName: msgs[0]?.accounts?.account_name || "",
-      messages: msgs.sort((a, b) => new Date(a.communication_date || 0).getTime() - new Date(b.communication_date || 0).getTime()),
-      lastActivity: msgs[0]?.communication_date,
-      channelCounts: {
-        Email: msgs.filter(m => m.communication_type === "Email").length,
-        Call: msgs.filter(m => isCall(m.communication_type)).length,
-        LinkedIn: msgs.filter(m => m.communication_type === "LinkedIn").length,
-      },
-    })).sort((a, b) => new Date(b.lastActivity || 0).getTime() - new Date(a.lastActivity || 0).getTime());
+
+    const result: any[] = [];
+
+    // Email conversation threads
+    Object.entries(emailThreads).forEach(([convId, msgs]) => {
+      const sorted = msgs.sort((a, b) => new Date(a.communication_date || 0).getTime() - new Date(b.communication_date || 0).getTime());
+      const lastMsg = sorted[sorted.length - 1];
+      const hasReply = msgs.some(m => m.email_status === "Replied" || m.sent_via === "graph-sync");
+      result.push({
+        contactId: lastMsg?.contact_id || "no-contact",
+        contactName: lastMsg?.contacts?.contact_name || "Unknown",
+        accountName: lastMsg?.accounts?.account_name || "",
+        messages: sorted,
+        lastActivity: lastMsg?.communication_date,
+        threadType: "email",
+        threadLabel: lastMsg?.subject || "Email Thread",
+        hasReply,
+        channelCounts: { Email: msgs.length, Call: 0, LinkedIn: 0 },
+      });
+    });
+
+    // Contact activity groups (non-email or non-threaded)
+    Object.entries(contactActivity).forEach(([contactId, msgs]) => {
+      const sorted = msgs.sort((a, b) => new Date(a.communication_date || 0).getTime() - new Date(b.communication_date || 0).getTime());
+      const lastMsg = sorted[sorted.length - 1];
+      result.push({
+        contactId,
+        contactName: lastMsg?.contacts?.contact_name || "Unknown",
+        accountName: lastMsg?.accounts?.account_name || "",
+        messages: sorted,
+        lastActivity: lastMsg?.communication_date,
+        threadType: "activity",
+        threadLabel: `${lastMsg?.contacts?.contact_name || "Unknown"} — Activity`,
+        hasReply: false,
+        channelCounts: {
+          Email: msgs.filter(m => m.communication_type === "Email").length,
+          Call: msgs.filter(m => isCall(m.communication_type)).length,
+          LinkedIn: msgs.filter(m => m.communication_type === "LinkedIn").length,
+        },
+      });
+    });
+
+    return result.sort((a, b) => new Date(b.lastActivity || 0).getTime() - new Date(a.lastActivity || 0).getTime());
   }, [communications]);
 
   const [logForm, setLogForm] = useState({
@@ -414,19 +455,49 @@ export function CampaignCommunications({ campaignId, isCampaignEnded }: Props) {
                       </Button>
                     )}
                     {!isCampaignEnded && c.communication_type === "Email" && c.contact_id && c.sent_via === "azure" && (
-                      <Button variant="ghost" size="sm" className="h-6 text-[10px] gap-0.5" onClick={() => {
-                        const contact = campaignContacts.find((cc: any) => cc.contact_id === c.contact_id);
-                        setLogForm({
-                          communication_type: "Email",
-                          contact_id: c.contact_id,
-                          subject: `Re: ${c.subject || ""}`,
-                          body: "",
-                          notes: "",
-                          email_status: "Replied",
-                          call_outcome: "",
-                          linkedin_status: "Connection Sent",
+                      <Button variant="ghost" size="sm" className="h-6 text-[10px] gap-0.5" onClick={async () => {
+                        // Log reply and propagate status to parent + email_history
+                        const contactRecord = campaignContacts.find((cc: any) => cc.contact_id === c.contact_id);
+                        const accountId = contactRecord?.account_id || c.account_id || null;
+                        const { error } = await supabase.from("campaign_communications").insert({
+                          campaign_id: campaignId, contact_id: c.contact_id,
+                          account_id: accountId, communication_type: "Email",
+                          subject: `Re: ${c.subject || ""}`, body: null,
+                          email_status: "Replied", delivery_status: "manual", sent_via: "manual",
+                          parent_id: c.id, thread_id: c.thread_id || c.id,
+                          conversation_id: c.conversation_id || null,
+                          owner: user!.id, created_by: user!.id,
+                          communication_date: new Date().toISOString(),
                         });
-                        setLogModalOpen(true);
+                        if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); return; }
+
+                        // Update parent email status to "Replied"
+                        await supabase.from("campaign_communications")
+                          .update({ email_status: "Replied" }).eq("id", c.id);
+
+                        // Update email_history reply fields if internet_message_id exists
+                        if (c.internet_message_id) {
+                          await supabase.from("email_history").update({
+                            replied_at: new Date().toISOString(),
+                            last_reply_at: new Date().toISOString(),
+                          }).eq("internet_message_id", c.internet_message_id);
+                        }
+
+                        // Update campaign_contacts stage to "Responded"
+                        if (c.contact_id) {
+                          const { data: cc } = await supabase.from("campaign_contacts")
+                            .select("stage").eq("campaign_id", campaignId).eq("contact_id", c.contact_id).single();
+                          const currentRank = stageRanks[cc?.stage || "Not Contacted"] ?? 0;
+                          if (stageRanks["Responded"] > currentRank) {
+                            await supabase.from("campaign_contacts").update({ stage: "Responded" })
+                              .eq("campaign_id", campaignId).eq("contact_id", c.contact_id);
+                          }
+                        }
+
+                        queryClient.invalidateQueries({ queryKey: ["campaign-communications", campaignId] });
+                        queryClient.invalidateQueries({ queryKey: ["campaign-contacts", campaignId] });
+                        queryClient.invalidateQueries({ queryKey: ["campaign-accounts", campaignId] });
+                        toast({ title: "Reply logged & status updated" });
                       }}>
                         <Mail className="h-3 w-3" /> Log Reply
                       </Button>
@@ -605,16 +676,21 @@ export function CampaignCommunications({ campaignId, isCampaignEnded }: Props) {
       {threads.length === 0 ? (
         <div className="text-center py-8"><p className="text-sm text-muted-foreground">No outreach logged yet.</p></div>
       ) : (
-        threads.map(thread => (
-          <Card key={thread.contactId} className="border">
+        threads.map((thread, idx) => (
+          <Card key={`${thread.threadType}-${thread.contactId}-${idx}`} className="border">
             <Collapsible>
               <CollapsibleTrigger asChild>
                 <CardHeader className="py-2.5 px-4 cursor-pointer hover:bg-muted/30 transition-colors">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
+                      {thread.threadType === "email" && <Mail className="h-3.5 w-3.5 text-blue-500" />}
                       <span className="font-medium text-sm">{thread.contactName}</span>
                       {thread.accountName && <span className="text-xs text-muted-foreground">· {thread.accountName}</span>}
-                      <span className="text-xs text-muted-foreground">({thread.messages.length} messages)</span>
+                      {thread.threadType === "email" && thread.threadLabel && (
+                        <span className="text-xs text-muted-foreground truncate max-w-[200px]">— {thread.threadLabel}</span>
+                      )}
+                      <span className="text-xs text-muted-foreground">({thread.messages.length})</span>
+                      {thread.hasReply && <Badge className="text-[10px] bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400" variant="secondary">Replied</Badge>}
                     </div>
                     <div className="flex items-center gap-1.5">
                       {thread.channelCounts.Email > 0 && <Badge variant="secondary" className="text-[10px] gap-0.5"><Mail className="h-2.5 w-2.5" />{thread.channelCounts.Email}</Badge>}
@@ -633,13 +709,14 @@ export function CampaignCommunications({ campaignId, isCampaignEnded }: Props) {
                 <CardContent className="pt-0 px-4 pb-3">
                   <div className="space-y-2 border-l-2 border-muted pl-3">
                     {thread.messages.map((msg: any) => (
-                      <div key={msg.id} className="text-sm">
+                      <div key={msg.id} className={`text-sm ${msg.sent_via === "graph-sync" ? "bg-green-50 dark:bg-green-900/10 rounded p-1.5" : ""}`}>
                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
                           {channelBadge(msg.communication_type)}
                           <span>{msg.communication_date ? format(new Date(msg.communication_date), "dd MMM yyyy HH:mm") : "—"}</span>
                           {deliveryBadge(msg.communication_type, msg.delivery_status)}
-                          {msg.sent_via === "azure" && <Badge variant="outline" className="text-[10px] px-1 py-0">Sent via email</Badge>}
-                          {msg.parent_id && <Badge variant="outline" className="text-[10px] px-1 py-0">Reply</Badge>}
+                          {msg.sent_via === "azure" && <Badge variant="outline" className="text-[10px] px-1 py-0">Sent</Badge>}
+                          {msg.sent_via === "graph-sync" && <Badge className="text-[10px] px-1 py-0 bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400" variant="secondary">Auto-synced Reply</Badge>}
+                          {msg.parent_id && msg.sent_via !== "graph-sync" && <Badge variant="outline" className="text-[10px] px-1 py-0">Reply</Badge>}
                           <span className="ml-auto flex items-center gap-1">
                             {!isCampaignEnded && msg.communication_type === "Email" && msg.contact_id && (
                               <Button variant="ghost" size="sm" className="h-5 text-[10px] gap-0.5 px-1.5" onClick={(e) => { e.stopPropagation(); openReply(msg); }}>
