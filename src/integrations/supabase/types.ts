@@ -290,12 +290,15 @@ export type Database = {
           communication_date: string | null
           communication_type: string
           contact_id: string | null
+          conversation_id: string | null
           created_at: string | null
           created_by: string | null
           delivery_status: string | null
           email_status: string | null
           email_type: string | null
+          graph_message_id: string | null
           id: string
+          internet_message_id: string | null
           linkedin_status: string | null
           message_id: string | null
           notes: string | null
@@ -315,12 +318,15 @@ export type Database = {
           communication_date?: string | null
           communication_type: string
           contact_id?: string | null
+          conversation_id?: string | null
           created_at?: string | null
           created_by?: string | null
           delivery_status?: string | null
           email_status?: string | null
           email_type?: string | null
+          graph_message_id?: string | null
           id?: string
+          internet_message_id?: string | null
           linkedin_status?: string | null
           message_id?: string | null
           notes?: string | null
@@ -340,12 +346,15 @@ export type Database = {
           communication_date?: string | null
           communication_type?: string
           contact_id?: string | null
+          conversation_id?: string | null
           created_at?: string | null
           created_by?: string | null
           delivery_status?: string | null
           email_status?: string | null
           email_type?: string | null
+          graph_message_id?: string | null
           id?: string
+          internet_message_id?: string | null
           linkedin_status?: string | null
           message_id?: string | null
           notes?: string | null
@@ -1172,6 +1181,7 @@ export type Database = {
           created_at: string | null
           delivered_at: string | null
           id: string
+          internet_message_id: string | null
           is_valid_open: boolean | null
           last_reply_at: string | null
           lead_id: string | null
@@ -1200,6 +1210,7 @@ export type Database = {
           created_at?: string | null
           delivered_at?: string | null
           id?: string
+          internet_message_id?: string | null
           is_valid_open?: boolean | null
           last_reply_at?: string | null
           lead_id?: string | null
@@ -1228,6 +1239,7 @@ export type Database = {
           created_at?: string | null
           delivered_at?: string | null
           id?: string
+          internet_message_id?: string | null
           is_valid_open?: boolean | null
           last_reply_at?: string | null
           lead_id?: string | null
