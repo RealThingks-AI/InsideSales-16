@@ -1,61 +1,107 @@
 
 
-## Fix Campaign Email Outreach Issues
+## Email Reply Tracking -- Automatic Sync Plan
 
-### Issues Identified
+### Problem Summary
 
-**1. Emails sent from shared CRM address instead of logged-in user's email**
+After deep analysis of the entire email sending and tracking flow, here are all the issues found:
 
-The `send-campaign-email` edge function uses `azureConfig.senderEmail` (the `AZURE_SENDER_EMAIL` env var, set to `crm@realthingks.com`) as the sender for Microsoft Graph's `sendMail` endpoint. This is a shared mailbox. To send as the logged-in user, the function should use the user's email from `user.email` as the sender in the Graph API call — Microsoft Graph supports `sendMail` on behalf of any licensed user in the tenant when using client credentials with `Mail.Send` application permission.
+1. **No reply detection mechanism exists** -- The system sends emails via Microsoft Graph `sendMail` API but has zero infrastructure to detect incoming replies. No Graph webhooks, no polling, no delta queries.
 
-**Changes:**
-- `supabase/functions/send-campaign-email/index.ts`: Use `user.email` as the sender email for `sendEmailViaGraph()` instead of `azureConfig.senderEmail`. Keep `azureConfig.senderEmail` as fallback if user email is unavailable. Also update `sender_email` in both `campaign_communications` and `email_history` inserts to reflect the actual sender.
-- `supabase/functions/_shared/azure-email.ts`: No changes needed — the `sendEmailViaGraph` function already accepts `senderEmail` as a parameter.
+2. **Graph `sendMail` returns no message metadata** -- The `sendMail` endpoint returns `202 Accepted` with an empty body. The code generates a random UUID as `message_id` (line 139 of `send-campaign-email/index.ts`) instead of capturing Graph's actual `internetMessageId` or `conversationId`. This makes thread correlation impossible.
 
-**2. Email thread/replies not tracked — no reply detection**
+3. **Thread view groups by contact, not email thread** -- `CampaignCommunications.tsx` line 138-157 groups all communications (emails, calls, LinkedIn) by `contact_id` rather than by actual email `thread_id`. This makes the "Threads" view misleading.
 
-The system sends emails via Microsoft Graph but has no mechanism to detect incoming replies. The Graph API does return a server-assigned `Message-ID` and `Conversation-ID`, but the current code:
-- Generates its own `messageId` via `crypto.randomUUID()` instead of capturing Graph's
-- Has no webhook or polling to check for replies in the user's mailbox
+4. **"Log Reply" only manually logs -- no status propagation** -- When clicking "Log Reply", it opens the log modal pre-filled with `email_status: "Replied"` but does NOT update the original sent email's status or the `email_history` record's `reply_count`/`replied_at` fields.
 
-This is an architectural limitation — Microsoft Graph requires either:
-- A webhook subscription (`/subscriptions`) to get notified of new messages, or
-- Periodic polling of the user's inbox for messages in the same conversation
+5. **`email_history` reply fields never updated** -- The `email_history` table has `reply_count`, `replied_at`, `last_reply_at` columns but nothing ever writes to them.
 
-**Feasible improvement for now:**
-- Capture the actual Graph `Message-ID` from the send response headers (Graph returns `202 Accepted` with no body for `sendMail`, so we'd need to use `messages` endpoint + `send` instead to get the ID). As a practical step, switch to the two-step approach: create draft via `POST /users/{email}/messages`, then send via `POST /users/{email}/messages/{id}/send`. The draft creation returns the `internetMessageId` and `conversationId`.
-- Store these in `campaign_communications` for future thread correlation.
-- Add a note in the UI that reply tracking requires manual logging for now, with a visible "Log Reply" button.
+6. **Emails sent from Contacts tab don't go through Graph** -- `CampaignContacts.tsx` and `CampaignAccountsContacts.tsx` have their own `handleSendEmail` that inserts directly into `campaign_communications` without calling the `send-campaign-email` edge function (no actual email delivery, no `delivery_status`, no `sent_via`).
 
-**However**, full reply detection requires either a Graph webhook or a polling function — this is a larger feature. For this cycle, I will:
-- Add a prominent "Log Reply" action button in the outreach table for email records
-- Pre-fill the log form with the original thread context (contact, account, subject with "Re:" prefix)
-- Set `email_status` to "Replied" for tracked replies
+### Architecture for Automatic Reply Sync
 
-**3. "manual" delivery status showing for emails**
+Since the user wants **automatic sync**, we need to poll the sender's mailbox via Microsoft Graph to detect replies to campaign emails. The approach:
 
-In `handleLogCommunication` (line 180), when manually logging an email activity, `delivery_status` is set to `"manual"`. This is technically correct (it distinguishes logged-from-outside vs sent-via-CRM emails) but confusing to users.
+**Two-step send** (instead of `sendMail`): Create a draft message, then send it. The draft creation returns the `internetMessageId` and `conversationId` which we store for thread correlation.
 
-**Fix:** Change the display label from "manual" to "Logged" in the `deliveryBadge` function. Keep the underlying value as "manual" in the database but display it more clearly.
-
-**4. Additional bugs found:**
-
-- **Log Activity modal shows Email fields for all channels**: The `logForm` defaults `communication_type` to "Email" and the modal always shows `email_status` field. When logging a Call, the email-specific fields should be hidden (partially handled but `email_status` still defaults).
-- **"Send Email" button visible on "All" tab**: Users might click Send Email from the All tab context where no channel filter is applied — this works but could be confusing since it opens the compose modal without channel context.
-- **Thread view groups by contact, not by email conversation**: The threads view groups all communications by `contact_id` rather than by actual email threads (`thread_id`). This means emails, calls, and LinkedIn messages all merge into one "thread" per contact.
+**Reply polling edge function**: A new scheduled edge function that periodically queries Graph for new messages that are replies to known campaign emails, using the stored `conversationId`.
 
 ### Implementation Plan
 
-#### File: `supabase/functions/send-campaign-email/index.ts`
-- After authenticating user, use `user.email` as sender email for Graph API
-- Pass `user.email` (with `azureConfig.senderEmail` as fallback) to `sendEmailViaGraph`
-- Update `sender_email` in `campaign_communications` and `email_history` inserts
+#### Phase 1: Capture Graph Message Metadata on Send
 
-#### File: `src/components/campaigns/CampaignCommunications.tsx`
-- **deliveryBadge**: Change display of "manual" to "Logged" with a neutral style
-- **Add "Log Reply" action**: For email records, add a button that opens the log modal pre-filled with the contact, account, subject ("Re: ..."), and `email_status: "Replied"`
-- **Expanded row cleanup**: Don't show "Delivery: manual (via manual)" — simplify to just "Logged manually"
+**File: `supabase/functions/_shared/azure-email.ts`**
+- Replace `sendMail` with a two-step approach:
+  1. `POST /users/{sender}/messages` -- creates a draft, returns the message object with `internetMessageId` and `conversationId`
+  2. `POST /users/{sender}/messages/{id}/send` -- sends the draft
+- Update `SendEmailResult` to include `graphMessageId`, `internetMessageId`, and `conversationId`
 
-#### Deployment
-- Redeploy `send-campaign-email` edge function after changes
+**File: `supabase/functions/send-campaign-email/index.ts`**
+- Store `graphMessageId`, `internetMessageId`, and `conversationId` from the send result
+- Save these in `campaign_communications.message_id` (use `internetMessageId` instead of random UUID)
+- Store `conversationId` in `campaign_communications.thread_id` (currently stores a random UUID or null)
+
+**Migration**: Add columns to `campaign_communications`:
+- `graph_message_id TEXT` -- Graph internal message ID
+- `internet_message_id TEXT` -- RFC 2822 Message-ID
+- `conversation_id TEXT` -- Graph conversation ID for thread grouping
+
+Add column to `email_history`:
+- `internet_message_id TEXT` -- for cross-referencing
+
+#### Phase 2: Reply Detection Edge Function
+
+**New file: `supabase/functions/check-email-replies/index.ts`**
+- Scheduled via pg_cron (every 5 minutes)
+- Queries `campaign_communications` for emails sent via Graph in the last 7 days that have a `conversation_id`
+- For each unique sender email + conversation_id pair, queries Graph: `GET /users/{senderEmail}/mailFolders/inbox/messages?$filter=conversationId eq '{convId}'&$orderby=receivedDateTime desc`
+- For each reply found that isn't already tracked:
+  - Insert a new `campaign_communications` record with `communication_type: "Email"`, `email_status: "Replied"`, `parent_id` pointing to the original, `thread_id` matching the original, `sent_via: "graph-sync"`
+  - Update the original email's `email_status` to "Replied"
+  - Update corresponding `email_history` record: increment `reply_count`, set `replied_at`/`last_reply_at`
+  - Update `campaign_contacts` stage to "Responded" if rank is higher
+  - Recompute `campaign_accounts` status
+
+#### Phase 3: Fix Thread View to Use Real Threads
+
+**File: `src/components/campaigns/CampaignCommunications.tsx`**
+- Update the `threads` memo (line 138) to group emails by `conversation_id` or `thread_id` (for actual email threading) rather than `contact_id`
+- Keep the contact-grouped view as a separate "Contact Activity" view
+- Show reply chains properly with indentation in the thread view
+
+#### Phase 4: Fix Log Reply to Update Original Email
+
+**File: `src/components/campaigns/CampaignCommunications.tsx`**
+- When logging a reply (line 416-432), after inserting the reply record:
+  - Update the parent email's `email_status` to "Replied"
+  - Update the matching `email_history` record's `reply_count` and `replied_at`
+  - Update `campaign_contacts` stage to "Responded"
+
+#### Phase 5: Fix Contacts Tab Email Sending
+
+**Files: `src/components/campaigns/CampaignContacts.tsx`, `src/components/campaigns/CampaignAccountsContacts.tsx`**
+- Replace direct `campaign_communications.insert` with a call to `supabase.functions.invoke("send-campaign-email", ...)` so emails are actually sent via Graph and properly tracked
+
+#### Phase 6: Schedule the Polling Function
+
+- Use `supabase--read_query` + SQL insert to create a pg_cron job that calls `check-email-replies` every 5 minutes
+- The function authenticates with Graph using the same Azure credentials already configured
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `supabase/functions/_shared/azure-email.ts` | Two-step send (draft + send) returning message metadata |
+| `supabase/functions/send-campaign-email/index.ts` | Store Graph metadata instead of random UUIDs |
+| New: `supabase/functions/check-email-replies/index.ts` | Polling function for reply detection |
+| `src/components/campaigns/CampaignCommunications.tsx` | Fix thread view, fix Log Reply to update parent, fix status propagation |
+| `src/components/campaigns/CampaignContacts.tsx` | Use edge function for actual email sending |
+| `src/components/campaigns/CampaignAccountsContacts.tsx` | Use edge function for actual email sending |
+| Migration | Add `graph_message_id`, `internet_message_id`, `conversation_id` columns |
+
+### Technical Notes
+
+- The Azure app registration already has `Mail.Send` application permission (confirmed by successful sends). It will also need `Mail.Read` or `Mail.ReadBasic` application permission for reading inbox replies. The user may need to grant this in Azure Portal.
+- The pg_cron job will be created via SQL insert (not migration) since it contains project-specific URLs.
+- The two-step send (draft + send) is slightly slower than `sendMail` but is the only way to get the `internetMessageId` before send.
 
